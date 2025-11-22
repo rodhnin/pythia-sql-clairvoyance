@@ -1,0 +1,52 @@
+# ============================================================================
+# Pythia SQL Injection Scanner - Production Deployment
+# ============================================================================
+#
+# This compose file is NOT meant to run Pythia as a daemon service.
+# Use it ONLY with `docker compose run` to execute scans.
+#
+# Usage:
+#   # Build the image
+#   docker compose build
+#
+#   # Scan external targets
+#   docker compose run --rm pyth --target http://example.com --safe --html
+#
+#   # Scan testing lab apps (requires compose.testing.yml running in another terminal)
+#   docker compose run --rm pyth --target http://php-vuln-app --safe --html
+#   docker compose run --rm pyth --target "http://dvwa/vulnerabilities/sqli/?id=&Submit=Submit" --safe --html
+#   docker compose run --rm pyth --target "http://dvwa/vulnerabilities/sqli_blind/?id=&Submit=Submit" --safe --html
+#   docker compose run --rm pyth --target http://flask-vuln-app:5000 --safe --html
+#
+#   NOTE: Use service names (not localhost) when scanning from Docker container
+#   They are in the same 'sqli-lab' network and can reach each other by service name
+#
+# To start testing lab environment (vulnerable apps):
+#   docker compose -f compose.testing.yml up -d
+#
+# ============================================================================
+
+services:
+    pyth:
+        build:
+            context: ..
+            dockerfile: docker/Dockerfile
+        container_name: pythia-scanner
+
+        volumes:
+            - ./reports:/reports
+            - ./data:/data
+
+        environment:
+            - PYTHIA_DOCKER_IN_CONTAINER=true
+
+        networks:
+            - default
+            - sqli-lab
+
+networks:
+    default:
+        name: pythia-network
+    sqli-lab:
+        external: true
+        name: docker_sqli-lab

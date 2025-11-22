@@ -1,0 +1,133 @@
+# ============================================================================
+# Pythia SQL Injection Scanner - Testing Lab
+# ============================================================================
+#
+# This docker-compose setup creates a complete testing environment with:
+# - Pythia scanner
+# - DVWA (Damn Vulnerable Web Application)
+# - Custom vulnerable PHP app
+# - Custom vulnerable Python Flask app
+# - MySQL database (with pre-loaded data)
+#
+# Usage:
+#   # Start vulnerable applications
+#   docker compose -f compose.testing.yml up -d
+#
+#   # Check status
+#   docker compose -f compose.testing.yml ps
+#
+#   # Scan from HOST machine (recommended)
+#   cd .. && python -m pyth --target http://localhost:8081 --safe --html
+#
+#   # Stop all services
+#   docker compose -f compose.testing.yml down
+#
+# Test targets available:
+#   - DVWA: http://localhost:8080
+#   - PHP Vulnerable App: http://localhost:8081
+#   - Flask Vulnerable App: http://localhost:8082
+#
+# ============================================================================
+
+services:
+    # ==========================================================================
+    # DVWA - Damn Vulnerable Web Application
+    # ==========================================================================
+    dvwa:
+        image: vulnerables/web-dvwa:latest
+        container_name: dvwa
+        ports:
+            - "8080:80"
+        environment:
+            - MYSQL_HOST=mysql
+            - MYSQL_DATABASE=dvwa
+            - MYSQL_USER=dvwa
+            - MYSQL_PASSWORD=dvwa123
+        networks:
+            - sqli-lab
+        depends_on:
+            mysql:
+                condition: service_healthy
+
+    # ==========================================================================
+    # PHP VULNERABLE APP (Custom)
+    # ==========================================================================
+    php-vuln-app:
+        build:
+            context: ./lab/php-app
+            dockerfile: Dockerfile
+        container_name: php-vuln-app
+        ports:
+            - "8081:80"
+        environment:
+            - MYSQL_HOST=mysql
+            - MYSQL_DATABASE=shop
+            - MYSQL_USER=shop
+            - MYSQL_PASSWORD=shop123
+        networks:
+            - sqli-lab
+        depends_on:
+            mysql:
+                condition: service_healthy
+
+    # ==========================================================================
+    # FLASK VULNERABLE APP (Custom)
+    # ==========================================================================
+    flask-vuln-app:
+        build:
+            context: ./lab/flask-app
+            dockerfile: Dockerfile
+        container_name: flask-vuln-app
+        ports:
+            - "8082:5000"
+        environment:
+            - MYSQL_HOST=mysql
+            - MYSQL_DATABASE=blog
+            - MYSQL_USER=blog
+            - MYSQL_PASSWORD=blog123
+            - FLASK_ENV=development
+            - FLASK_DEBUG=1
+        volumes:
+            - ./lab/flask-app:/app
+        networks:
+            - sqli-lab
+        depends_on:
+            mysql:
+                condition: service_healthy
+
+    # ==========================================================================
+    # MYSQL DATABASE (Custom Build with Pre-loaded Data)
+    # ==========================================================================
+    mysql:
+        build:
+            context: ..
+            dockerfile: docker/lab/mysql-init/Dockerfile
+        container_name: mysql-lab
+        ports:
+            - "3307:3306"
+        environment:
+            - MYSQL_ROOT_PASSWORD=root123
+            - MYSQL_DATABASE=dvwa
+        volumes:
+            - mysql-data:/var/lib/mysql
+        networks:
+            - sqli-lab
+        healthcheck:
+            test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot123"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+# ==========================================================================
+# NETWORKS
+# ==========================================================================
+networks:
+    sqli-lab:
+        driver: bridge
+
+# ==========================================================================
+# VOLUMES
+# ==========================================================================
+volumes:
+    mysql-data:
+        driver: local
