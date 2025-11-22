@@ -8,21 +8,21 @@ In the Pythia project and Argos Suite, we are committed to providing a welcoming
 
 Examples of behavior that contributes to creating a positive environment include:
 
-- Using welcoming and inclusive language
-- Being respectful of differing opinions, experiences, and perspectives
-- Accepting constructive criticism gracefully
-- Focusing on what is best for the community
-- Showing empathy towards other community members
-- Respecting privacy and confidentiality
+-   Using welcoming and inclusive language
+-   Being respectful of differing opinions, experiences, and perspectives
+-   Accepting constructive criticism gracefully
+-   Focusing on what is best for the community
+-   Showing empathy towards other community members
+-   Respecting privacy and confidentiality
 
 Examples of unacceptable behavior by participants include:
 
-- The use of sexualized language or imagery and unwelcome sexual attention or advances
-- Trolling, insulting/derogatory comments, and personal or political attacks
-- Public or private harassment
-- Publishing others' private information without explicit permission
-- Other conduct which could reasonably be considered inappropriate in a professional setting
-- Any form of discrimination or abuse
+-   The use of sexualized language or imagery and unwelcome sexual attention or advances
+-   Trolling, insulting/derogatory comments, and personal or political attacks
+-   Public or private harassment
+-   Publishing others' private information without explicit permission
+-   Other conduct which could reasonably be considered inappropriate in a professional setting
+-   Any form of discrimination or abuse
 
 ## Enforcement
 
@@ -32,7 +32,7 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## Reporting
 
-Instances of abusive, harassing, or otherwise unacceptable behavior should be reported by contacting the project maintainers at **ethical-security@rodhnin.com**. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior should be reported by contacting the project maintainers at **[rodhnin.com](https://www.rodhnin.com/)**. All complaints will be reviewed and investigated promptly and fairly.
 
 All maintainers are obligated to respect the privacy and security of the reporter of any incident.
 
