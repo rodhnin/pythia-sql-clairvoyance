@@ -519,7 +519,7 @@ def test_postgresql_error_detection():
 
 ## 📜 License
 
-By contributing to Asterion, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to Pythia, you agree that your contributions will be licensed under the [MIT License](LICENSE).
 
 ---
 
