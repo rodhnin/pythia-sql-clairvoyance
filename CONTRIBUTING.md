@@ -407,7 +407,7 @@ Fixes #[issue number]
 
 **DO NOT** open public issues for security vulnerabilities!
 
-See [SECURITY.md](SECURITY.md) for responsible disclosure.
+Contact me on [https://rodhnin.com](https://rodhnin.com).
 
 ### Regular Bugs
 
@@ -509,26 +509,25 @@ def test_postgresql_error_detection():
 
 ---
 
-## License
+## 📞 Questions?
 
-By contributing, you agree that your contributions will be licensed under the **MIT License**.
-
----
-
-## Questions?
-
--   💬 [GitHub Discussions](https://github.com/rodhnin/pythia-sql-clairvoyance/discussions)
--   🐛 [GitHub Issues](https://github.com/rodhnin/pythia-sql-clairvoyance/issues)
--   🌐 [Website](https://rodhnin.com)
+-   **General questions**: Open a GitHub Discussion
+-   **Bug reports**: Open a GitHub Issue
+-   **Project maintainer**: [rodhnin](https://github.com/rodhnin) | [https://rodhnin.com](https://rodhnin.com)
 
 ---
 
-## Recognition
+## 📜 License
 
-Contributors will be:
+By contributing to Asterion, you agree that your contributions will be licensed under the [MIT License](LICENSE).
 
--   ✅ Listed in CHANGELOG.md
--   ✅ Mentioned in release notes
--   ✅ Credited in README.md (for significant contributions)
+---
 
-Thank you for helping make Pythia better! 🎉
+**Thank you for helping make database security auditing more accessible!** 🛡️
+
+Part of the **Argos Security Suite**:
+
+-   👁️ [Argus](https://github.com/rodhnin/argus-wp-watcher) - WordPress Security Scanner
+-   🔥 [Hephaestus](https://github.com/rodhnin/hephaestus-server-forger) - Vulnerability Database Manager
+-   🐂 [Asterion](https://github.com/rodhnin/asterion-network-minotaur) - Network Security Auditor
+-   🔮 **Pythia** - SQL Injection Detection Scanner (this project)
