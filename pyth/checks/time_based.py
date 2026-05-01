@@ -2,6 +2,9 @@
 Pythia Time-Based Blind SQL Injection Detection
 ===============================================
 
+v0.2.0: Expanded payload set (35+ payloads) with WAF bypass variants and
+multi-DBMS coverage (MySQL, MSSQL, PostgreSQL, Oracle, SQLite) for aggressive mode.
+
 Author: Rodney Dhavid Jimenez Chacin (rodhnin)
 License: MIT
 """
@@ -14,6 +17,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from ..core.logging import get_logger
 from ..core.config import get_config
 from .forms import FormTester
+from .waf_bypass import TIME_BASED_PAYLOADS_AGGRESSIVE
 
 logger = get_logger(__name__)
 
@@ -43,9 +47,16 @@ class TimeBasedDetector:
         self.http = http_client
         self.auto_csrf = auto_csrf
         self.form_tester = FormTester(config, http_client, auto_csrf)
-        
-        # Load payloads
-        self.payloads = self._get_payloads()
+
+        # Aggressive mode always true for time-based (it only runs in aggressive)
+        # Use expanded payload set
+        self.aggressive = getattr(config, 'mode', 'safe') == 'aggressive'
+
+        # Load payloads — aggressive uses expanded multi-DBMS set
+        if self.aggressive:
+            self.payloads = TIME_BASED_PAYLOADS_AGGRESSIVE
+        else:
+            self.payloads = self._get_payloads()
         
         # Time settings
         self.time_threshold = 2.5  # Must exceed baseline by this much (seconds)
@@ -202,6 +213,15 @@ class TimeBasedDetector:
             
             seen.add(target_key)
             
+            # Detect session-variable pattern: form stores value in session,
+            # SQL executes on a different (parent) page.
+            form_ctx = evidence.get('form') or {}
+            _form_action = form_ctx.get('action', '')
+            _form_parent = form_ctx.get('parent_url', '')
+            _is_session_var = bool(
+                _form_action and _form_parent and _form_action != _form_parent
+            )
+
             target = {
                 'url': url,
                 'target_param': parameter,
@@ -212,7 +232,11 @@ class TimeBasedDetector:
                 'is_path_param': is_path_param,
                 'param_position': param_position,
                 'path_template': path_template,
-                'form': evidence.get('form')
+                'form': evidence.get('form'),
+                # Session-var fields (populated only for DVWA-high-style targets)
+                'is_session_var': _is_session_var,
+                'session_var_action': _form_action if _is_session_var else '',
+                'session_var_parent': _form_parent if _is_session_var else '',
             }
             
             targets.append(target)
@@ -442,7 +466,113 @@ class TimeBasedDetector:
         except Exception as e:
             logger.error(f"Error testing time delay: {e}")
             return (False, 0.0, 'none')
-    
+
+    def _test_session_var_target(self, target: Dict, payload_dict: Dict) -> Optional[Dict]:
+        """
+        Time-based test for session-variable injection pattern.
+
+        Pattern:
+          POST <payload> → form_action  (stores in $_SESSION)
+          GET  <parent_url>             (SQL executes here → delay measured here)
+        """
+        action_url     = target['session_var_action']
+        parent_url     = target['session_var_parent']
+        target_param   = target['target_param']
+        target_value   = target['target_value']
+        payload        = payload_dict['payload']
+        dbms           = payload_dict['dbms']
+        form           = target.get('form') or {}
+
+        logger.info(
+            f"  [SESSION-VAR] time-based POST→GET: "
+            f"action={action_url} parent={parent_url} param={target_param}"
+        )
+
+        # Build base POST data from form inputs
+        base_data: Dict = {}
+        for inp in form.get('inputs', []):
+            inp_name = inp.get('name', '')
+            if inp_name:
+                base_data[inp_name] = inp.get('value', '') or target_value
+
+        # ── Baseline: POST normal value → GET parent, measure 3 samples ──
+        baseline_times = []
+        for _ in range(self.baseline_samples):
+            try:
+                sample_data = {**base_data, target_param: target_value}
+                self.http.post(action_url, data=sample_data)
+                t0 = time.time()
+                self.http.get(parent_url)
+                baseline_times.append(time.time() - t0)
+            except Exception as e:
+                logger.debug(f"  [SESSION-VAR] baseline sample failed: {e}")
+
+        if len(baseline_times) < 2:
+            logger.warning("  [SESSION-VAR] not enough baseline samples")
+            return None
+
+        baseline_mean  = mean(baseline_times)
+        baseline_stdev = stdev(baseline_times)
+        min_delay      = baseline_mean + self.time_threshold + baseline_stdev * 2
+
+        logger.debug(
+            f"  [SESSION-VAR] baseline mean={baseline_mean:.3f}s "
+            f"stdev={baseline_stdev:.3f}s min_required={min_delay:.3f}s"
+        )
+
+        # ── Payload tests (must pass 3/3) ──
+        injected_value  = f"{target_value}{payload}"
+        payload_data    = {**base_data, target_param: injected_value}
+        test_times      = []
+
+        for attempt in range(1, 4):
+            try:
+                self.http.post(action_url, data=payload_data)
+                t0 = time.time()
+                self.http.get(parent_url)
+                elapsed = time.time() - t0
+                test_times.append(elapsed)
+                logger.debug(
+                    f"  [SESSION-VAR] test {attempt}/3: {elapsed:.3f}s "
+                    f"(need >= {min_delay:.3f}s)"
+                )
+                if elapsed < min_delay:
+                    # Reset session to clean state before giving up
+                    reset_data = {**base_data, target_param: target_value}
+                    self.http.post(action_url, data=reset_data)
+                    self.http.get(parent_url)
+                    return None
+            except Exception as e:
+                logger.debug(f"  [SESSION-VAR] payload test failed: {e}")
+                return None
+
+        # All 3 confirmed ✓
+        logger.info(
+            f"✓✓✓ [SESSION-VAR] TIME-BASED SQLi CONFIRMED (3/3) "
+            f"in '{target_param}' via {action_url}"
+        )
+
+        actual_delays  = [t - baseline_mean for t in test_times]
+        cons_stdev     = stdev(actual_delays)
+        if cons_stdev < 0.5:
+            final_confidence = 'high'
+        elif cons_stdev < 1.0:
+            final_confidence = 'medium'
+        else:
+            final_confidence = 'low'
+
+        return self._create_finding(
+            url=parent_url,
+            parameter=target_param,
+            original_value=target_value,
+            payload=payload,
+            dbms=dbms,
+            baseline_time=baseline_mean,
+            test_times=test_times,
+            confidence=final_confidence,
+            method='POST',
+        )
+
     def test_target(
         self,
         target: Dict,
@@ -465,9 +595,16 @@ class TimeBasedDetector:
         param_position = target.get('param_position')
         
         logger.debug(f"Testing payload: {payload}")
-        
+
         # ================================================================
-        # Step 1: Prepare baseline URL and data 
+        # SESSION-VAR PATTERN: POST→GET chain (e.g. DVWA high)
+        # payload stored in session by form action, SQL executes on parent page
+        # ================================================================
+        if target.get('is_session_var'):
+            return self._test_session_var_target(target, payload_dict)
+
+        # ================================================================
+        # Step 1: Prepare baseline URL and data
         # ================================================================
         if method == 'POST' and not is_path_param:
             parsed = urlparse(url)
@@ -668,8 +805,21 @@ class TimeBasedDetector:
         delays = [t - baseline_time for t in test_times]
         avg_delay = mean(delays)
         
-        finding_id = 'PYTHIA-SQL-020'
-        title = "Time-Based Blind SQL Injection"
+        # Sub-code by DBMS: 020=MySQL, 021=MSSQL WAITFOR, 022=PostgreSQL pg_sleep
+        _dbms_code_map = {
+            'MySQL': 'PYTHIA-SQL-020',
+            'MSSQL': 'PYTHIA-SQL-021',
+            'Microsoft SQL Server': 'PYTHIA-SQL-021',
+            'PostgreSQL': 'PYTHIA-SQL-022',
+        }
+        finding_id = _dbms_code_map.get(dbms, 'PYTHIA-SQL-020')
+
+        _title_map = {
+            'PYTHIA-SQL-020': 'Time-Based Blind SQL Injection (MySQL SLEEP)',
+            'PYTHIA-SQL-021': 'Time-Based Blind SQL Injection (MSSQL WAITFOR)',
+            'PYTHIA-SQL-022': 'Time-Based Blind SQL Injection (PostgreSQL pg_sleep)',
+        }
+        title = _title_map.get(finding_id, 'Time-Based Blind SQL Injection')
         
         description = (
             f"Time-based blind SQL injection vulnerability detected in parameter '{parameter}'. "
@@ -725,9 +875,11 @@ class TimeBasedDetector:
             'references': references,
             'affected_component': f"{method} {url} (parameter: {parameter})",
             'timestamp': datetime.now(timezone.utc).isoformat(),
-            'detection_method': 'time-based'
+            'detection_method': 'time-based',
+            'parameter': parameter,
+            'vector': method,
         }
-        
+
         return finding
     
     def scan(

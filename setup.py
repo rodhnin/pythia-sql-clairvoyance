@@ -37,7 +37,7 @@ else:
 
 setup(
     name='pythia-scanner',
-    version='0.1.0',
+    version='0.2.0',
     description='Passive SQL Injection Detection Scanner',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -113,6 +113,6 @@ setup(
     project_urls={
         'Bug Reports': 'https://github.com/rodhnin/pythia-sql-clairvoyance/issues',
         'Source': 'https://github.com/rodhnin/pythia-sql-clairvoyance',
-        'Website': 'https://rodhnin.com',
+        'Documentation': 'https://github.com/rodhnin/pythia-sql-clairvoyance#readme',
     },
 )

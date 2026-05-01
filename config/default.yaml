@@ -1,0 +1,478 @@
+# Pythia - Default Configuration
+# Passive SQL Injection Scanner
+# Override via environment variables or command-line flags
+
+# ============================================================================
+# GENERAL SETTINGS
+# ============================================================================
+general:
+    version: "0.2.0"
+    author: "Rodney Dhavid Jimenez Chacin (rodhnin)"
+    github: "https://github.com/rodhnin"
+    contact: "https://rodhnin.com"
+
+# ============================================================================
+# PATHS & STORAGE
+# ============================================================================
+paths:
+    # Reports output directory (auto-created if doesn't exist)
+    report_dir: "~/.pythia/reports"
+
+    # SQLite database (shared across Argus, Hephaestus, Pythia, Asterion)
+    database: "~/.argos/argos.db"
+
+    # Log file location (set to null to disable file logging)
+    log_file: "~/.pythia/pythia.log"
+
+    # Consent token verification evidence storage
+    consent_proofs_dir: "~/.pythia/consent-proofs"
+
+# ============================================================================
+# SCAN BEHAVIOR
+# ============================================================================
+scan:
+    # Default scan mode (safe = passive detection, aggressive = includes time-based)
+    default_mode: "safe"
+
+    # Request rate limiting (requests per second)
+    # NOTE: SQLi testing is slower than typical scans to avoid overwhelming targets
+    rate_limit:
+        safe_mode: 2.0 # Conservative rate for passive SQLi detection
+        aggressive_mode: 5.0 # Higher rate for time-based tests (requires consent)
+
+    # HTTP timeouts (seconds)
+    timeout:
+        connect: 10
+        read: 30
+
+    # User-Agent string for HTTP requests
+    user_agent: "Pythia/0.2.0"
+
+    # Follow redirects
+    follow_redirects: true
+    max_redirects: 5
+
+    # Verify SSL certificates (set to false for testing self-signed certs)
+    verify_ssl: true
+
+# ============================================================================
+# SQL INJECTION DETECTION SETTINGS
+# ============================================================================
+sqli:
+    # SQL error patterns to detect (regex patterns for different DBMS)
+    error_patterns:
+        # MySQL patterns
+        - "You have an error in your SQL syntax"
+        - "Warning: mysql_"
+        - "MySQLSyntaxErrorException"
+        - "com\\.mysql\\.jdbc"
+        - "MySql\\.Data\\.MySqlClient"
+
+        # PostgreSQL patterns
+        - "pg_query\\(\\)"
+        - "pg_exec\\(\\)"
+        - "PostgreSQL query failed"
+        - "org\\.postgresql\\.util\\.PSQLException"
+        - "PSQLException"
+
+        # Microsoft SQL Server patterns
+        - "Microsoft SQL Server"
+        - "ODBC SQL Server Driver"
+        - "SQLServer JDBC Driver"
+        - "Microsoft OLE DB Provider for SQL Server"
+        - "Unclosed quotation mark after the character string"
+
+        # Oracle patterns
+        - "ORA-\\d{5}"
+        - "Oracle error"
+        - "Oracle.*Driver"
+        - "Oracle DB2"
+
+        # SQLite patterns
+        - "SQLite3::SQLException"
+        - "SQLite/JDBCDriver"
+        - "System\\.Data\\.SQLite\\.SQLiteException"
+
+        # Generic SQL patterns
+        - "SQL syntax.*MySQL"
+        - "Warning.*\\Wmysqli?_"
+        - "MySQLSyntaxErrorException"
+        - "valid MySQL result"
+        - "check the manual that corresponds to your (MySQL|MariaDB) server version"
+        - "SQL Server.*Driver"
+        - "ODBC.*Driver"
+        - "JDBC.*Driver"
+        - "Syntax error.*SQL"
+        - "SQL command not properly ended"
+        - "Unclosed quotation"
+
+    # Error-based detection payloads (safe mode)
+    # These only trigger error messages, no data extraction
+    error_payloads:
+        # Basic quotes
+        - "'"
+        - '"'
+        - "1'"
+        - '1"'
+
+        # OR conditions with comments
+        - "' OR '1'='1"
+        - '" OR "1"="1'
+        - "' OR 1=1--"
+        - '" OR 1=1--'
+
+        # Admin bypass
+        - "admin'--"
+        - 'admin"--'
+        - "admin' OR '1'='1"
+        - "admin' OR 1=1--"
+
+        # AND conditions
+        - "1' AND '1'='1"
+        - "1' AND 1=1--"
+
+        # UNION attempts (will trigger errors if wrong column count)
+        - "' UNION SELECT NULL--"
+        - "1' UNION SELECT NULL--"
+        - "' UNION SELECT 1,2,3--"
+
+        # ORDER BY (column enumeration)
+        - "1' ORDER BY 1--"
+        - "1' ORDER BY 10--"
+
+        # Stacked queries
+        - "'; SELECT SLEEP(1)--"
+        - "1'; WAITFOR DELAY '0:0:1'--"
+
+    # Boolean blind detection payloads (safe mode)
+    # Compare responses with true vs false conditions
+    boolean_payloads:
+        # True conditions
+        true:
+            # Basic OR conditions (work in most contexts)
+            - " OR 1=1-- "
+            - "' OR 1=1-- "
+            - "' OR '1'='1"
+            - '" OR "1"="1'
+
+            # Basic AND conditions
+            - " AND 1=1-- "
+            - "' AND '1'='1-- "
+
+            # Alternative comment styles
+            - " OR 1=1#"
+            - "' OR 1=1#"
+            - " OR 1=1/*"
+
+            # LIKE context specific
+            - "%' OR 1=1-- "
+            - "%' OR '1'='1-- "
+
+            # Numeric contexts
+            - " OR 1=1"
+            - "1 OR 1=1"
+
+            # Legacy/fallback
+            - " OR 'x'='x"
+            - " AND true"
+
+        # False conditions
+        false:
+            # Basic AND/OR with false conditions
+            - " AND 1=0-- "
+            - "' AND 1=0-- "
+            - "' AND '1'='0"
+            - '" AND "1"="0'
+
+            # OR with false (should return original results)
+            - " OR 1=0-- "
+            - "' OR 1=0-- "
+
+            # Alternative comment styles
+            - " AND 1=0#"
+            - "' AND 1=0#"
+            - " AND 1=0/*"
+
+            # LIKE context specific
+            - "%' AND 1=0-- "
+            - "%' AND '1'='0-- "
+
+            # Numeric contexts
+            - " AND 1=0"
+            - "1 AND 1=0"
+
+            # Legacy/fallback
+            - " AND 'x'='y"
+            - " AND false"
+
+    # Time-based blind detection payloads (AGGRESSIVE MODE ONLY)
+    # CAUTION: These actually delay server responses
+    time_based_payloads:
+        # MySQL / MariaDB
+        - "; SELECT SLEEP(3)--"
+        - "'; SELECT SLEEP(3)--"
+        - "' AND SLEEP(3)--"
+        - "' OR SLEEP(3)--"
+        - "1' AND SLEEP(3)='0"
+        - "1' OR SLEEP(3)='0"
+
+        # Microsoft SQL Server
+        - "; WAITFOR DELAY '0:0:3'--"
+        - "'; WAITFOR DELAY '0:0:3'--"
+        - "' WAITFOR DELAY '0:0:3'--"
+        - "1' WAITFOR DELAY '0:0:3'--"
+
+        # PostgreSQL
+        - "; SELECT pg_sleep(3)--"
+        - "'; SELECT pg_sleep(3)--"
+        - "' AND pg_sleep(3)--"
+        - "' OR pg_sleep(3)--"
+
+        # Oracle
+        - "; BEGIN DBMS_LOCK.SLEEP(3); END;--"
+        - "'; BEGIN DBMS_LOCK.SLEEP(3); END;--"
+
+    # Time-based detection threshold (seconds)
+    # Response must exceed baseline by this amount to be considered positive
+    time_threshold: 2.5
+
+    # Confidence thresholds for boolean blind detection
+    boolean_blind:
+        # Minimum response length difference (bytes) to consider significant
+        min_length_diff: 100
+
+        # Confidence levels based on differences
+        high_confidence_length_diff: 500 # >500 bytes = high confidence
+        medium_confidence_length_diff: 200 # 200-500 bytes = medium confidence
+
+        # Require consistent results across multiple payloads
+        min_consistent_results: 2
+
+# ============================================================================
+# WEB CRAWLER SETTINGS
+# ============================================================================
+crawler:
+    # Maximum crawl depth from start URL
+    max_depth: 2
+
+    # Maximum total pages to crawl
+    max_pages: 100
+
+    # Stay within the original domain (recommended for ethical testing)
+    same_domain_only: true
+
+    # Follow redirects during crawling
+    follow_redirects: true
+
+    # RESPECT robots.txt
+    respect_robots_txt: true
+
+    # File extensions to exclude from crawling
+    exclude_extensions:
+        - .jpg
+        - .jpeg
+        - .png
+        - .gif
+        - .bmp
+        - .svg
+        - .webp
+        - .ico
+        - .pdf
+        - .doc
+        - .docx
+        - .xls
+        - .xlsx
+        - .ppt
+        - .pptx
+        - .zip
+        - .tar
+        - .gz
+        - .rar
+        - .7z
+        - .mp3
+        - .mp4
+        - .avi
+        - .mov
+        - .css
+        - .js
+        - .woff
+        - .woff2
+        - .ttf
+        - .eot
+
+    # Patterns to exclude from crawling
+    exclude_patterns:
+        - "/logout"
+        - "/signout"
+        - "/delete"
+        - "/remove"
+        - "/admin/delete"
+
+    # Respect robots.txt (recommended for ethical testing)
+    respect_robots_txt: true
+
+    # Delay between crawl requests (seconds, in addition to rate limit)
+    crawl_delay: 0.5
+
+# ============================================================================
+# FORM TESTING SETTINGS
+# ============================================================================
+forms:
+    # Test forms with POST requests (safe, read-only detection)
+    enable_post_testing: true
+
+    # Maximum number of input fields to test per form
+    max_inputs_per_form: 20
+
+    # Field types to test for SQLi
+    testable_input_types:
+        - text
+        - search
+        - email
+        - url
+        - tel
+        - number
+        - hidden # Sometimes vulnerable
+
+    # Skip forms with these names/IDs (avoid logout, delete actions)
+    skip_form_patterns:
+        - "logout"
+        - "signout"
+        - "delete"
+        - "remove"
+        - "unsubscribe"
+
+    # Include CSRF tokens and hidden fields in POST data
+    preserve_hidden_fields: true
+
+# ============================================================================
+# CONSENT TOKEN SETTINGS
+# ============================================================================
+consent:
+    # Token expiration time (hours)
+    token_expiry_hours: 48
+
+    # Token generation (hex length)
+    token_hex_length: 16
+
+    # HTTP verification path
+    http_verification_path: "/.well-known/"
+
+    # DNS TXT record prefix
+    dns_txt_prefix: "pythia-verify="
+
+    # Retry settings for verification
+    verification_retries: 3
+    verification_retry_delay: 2 # seconds
+
+# ============================================================================
+# REPORTING
+# ============================================================================
+reporting:
+    # Report format options
+    format:
+        json: true # Always generate JSON
+        html: false # Generate HTML only if --html flag or this is true
+
+    # JSON output formatting
+    json_indent: 2 # Pretty-print with 2-space indentation
+
+    # HTML template customization
+    html:
+        include_evidence: true
+        include_raw_requests: false # Don't include full HTTP dumps by default
+        css_inline: true # Embed CSS in HTML (self-contained)
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+logging:
+    # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    level: "INFO"
+
+    # Log format
+    format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format: "%Y-%m-%d %H:%M:%S"
+
+    # Structured JSON logging (for parsing/analysis)
+    json_format: false
+
+    # Redaction settings (remove sensitive data from logs)
+    redact:
+        enabled: true
+        patterns:
+            - "password"
+            - "token"
+            - "api_key"
+            - "secret"
+            - "authorization"
+            - "cookie"
+            - "session"
+
+    # Console output colors (disable in CI/piped environments)
+    colors: true
+
+# ============================================================================
+# AI INTEGRATION (LangChain)
+# ============================================================================
+ai:
+    # Enable AI features (requires --use-ai flag AND verified consent)
+    enabled: false
+
+    # LangChain settings
+    langchain:
+        # LLM provider (openai, anthropic, ollama)
+        provider: "openai"
+
+        # Model selection
+        model: "gpt-4o-mini-2024-07-18"
+
+        # Temperature (0.0 = deterministic, 1.0 = creative)
+        temperature: 0.3
+
+        # Max tokens for response
+        max_tokens: 2000
+
+        # Ollama Server (if using local models)
+        ollama_base_url: "http://localhost:11434"
+
+    # API key source (environment variable name)
+    api_key_env: "OPENAI_API_KEY"
+
+    # Prompt templates directory
+    prompts_dir: "config/prompts"
+
+    # Sanitization settings
+    sanitization:
+        remove_urls: false # Keep URLs for context
+        remove_tokens: true # Always strip tokens
+        remove_credentials: true # Always strip passwords/keys
+        max_evidence_length: 500 # Truncate long evidence snippets
+
+# ============================================================================
+# ADVANCED / EXPERIMENTAL
+# ============================================================================
+advanced:
+    # Concurrent requests (use with caution in SQLi testing)
+    max_workers: 5
+
+    # Cache HTTP responses (for development/testing)
+    cache_responses: false
+    cache_ttl_seconds: 3600
+
+    # Custom headers to add to all requests
+    custom_headers: {}
+
+    # Proxy settings (leave empty for no proxy)
+    proxy:
+        http: null
+        https: null
+
+# ============================================================================
+# DOCKER / CONTAINER SETTINGS
+# ============================================================================
+docker:
+    # Adjust paths when running in container
+    in_container: false
+    container_report_dir: "/reports"
+    container_db_path: "/data/argos.db"

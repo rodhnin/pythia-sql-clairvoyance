@@ -129,7 +129,7 @@ class ReportGenerator:
         
         processed = {}
         for key, value in ai_analysis.items():
-            if key in ['executive_summary', 'technical_remediation'] and isinstance(value, str):
+            if key in ['executive_summary', 'technical_remediation', 'agent_analysis'] and isinstance(value, str):
                 # Convert markdown to HTML
                 html_content = md.convert(value)
                 
@@ -360,6 +360,7 @@ class ReportGenerator:
             notes=report.get('notes'),
             consent=report.get('consent'),
             ai=ai_processed,
+            diff=report.get('diff'),
             contact=self.config.contact
         )
         

@@ -48,7 +48,12 @@ class WebCrawler:
         self.exclude_extensions = config.crawler_exclude_extensions if hasattr(config, 'crawler_exclude_extensions') else []
         self.exclude_patterns = config.crawler_exclude_patterns if hasattr(config, 'crawler_exclude_patterns') else []
         self.respect_robots = config.crawler_respect_robots if hasattr(config, 'crawler_respect_robots') else True
-        
+        self.js_rendering = getattr(config, 'crawler_js_rendering', False)
+        self.no_crawl = getattr(config, 'crawler_no_crawl', False)
+
+        if self.js_rendering:
+            self._check_playwright_available()
+
         # State tracking
         self.visited_urls: Set[str] = set()
         self.discovered_urls: Set[str] = set()
@@ -115,25 +120,52 @@ class WebCrawler:
                 # Extract forms from the page
                 content_type = response.headers.get('Content-Type', '')
                 if 'text/html' in content_type:
-                    soup = BeautifulSoup(response.text, 'html.parser')
+                    # --js: render with Playwright to get DOM after JS execution
+                    if self.js_rendering:
+                        logger.info("[JS] Rendering initial page with Playwright...")
+                        js_html = self._fetch_html_with_playwright(final_url)
+                        _initial_html = js_html if js_html else response.text
+                        if js_html:
+                            logger.info("[JS] Playwright render successful — using JS-rendered DOM")
+                    else:
+                        _initial_html = response.text
+
+                    soup = BeautifulSoup(_initial_html, 'html.parser')
                     forms = self._extract_forms(soup, final_url)
                     self.forms.extend(forms)
-                    
+
                     if forms:
                         logger.info(f"✓ Found {len(forms)} forms at target URL")
                         for form in forms:
                             logger.debug(f"  - {form['method'].upper()} form with {len(form['inputs'])} inputs")
                     else:
                         logger.debug("No forms found at target URL")
-                    
+
+                    # Extract links (including onclick URLs) — stored for BFS seeding below
+                    self._initial_links_from_target = self._extract_links(soup, final_url)
+
+                    # --js: extract popup/window.open URLs separately so they can
+                    # be prioritised (prepended) in the BFS queue
+                    if self.js_rendering:
+                        self._js_popup_urls = self._js_extract_popup_urls(_initial_html, final_url)
+                        if self._js_popup_urls:
+                            logger.info(
+                                f"[JS] Found {len(self._js_popup_urls)} popup/window.open URL(s): "
+                                + ", ".join(self._js_popup_urls)
+                            )
+                    else:
+                        self._js_popup_urls = []
+
                     # Also extract AJAX endpoints from the initial page
-                    ajax_endpoints = self._extract_ajax_endpoints(response.text, target_base_url)
+                    ajax_endpoints = self._extract_ajax_endpoints(_initial_html, target_base_url)
                     if ajax_endpoints:
                         logger.debug(f"Found {len(ajax_endpoints)} AJAX endpoints in target page")
                         for endpoint in ajax_endpoints:
                             self.discovered_urls.add(endpoint)
                 else:
                     logger.debug(f"Target URL is not HTML (Content-Type: {content_type})")
+                    _initial_html = ''
+                    self._js_popup_urls = []
             
             else:
                 logger.warning(f"Target URL returned {response.status_code}")
@@ -163,21 +195,67 @@ class WebCrawler:
                 'error': str(e)
             }
         
-        # BFS queue: (url, depth)
-        # Start from the base URL (without query params)
-        queue = deque([(target_base_url, 0)])
+        # ----------------------------------------------------------------
+        # --no-crawl: skip BFS entirely, return only what we found on the
+        # initial target URL (its query params + any forms on that page)
+        # ----------------------------------------------------------------
+        if self.no_crawl:
+            logger.info("--no-crawl: BFS skipped — testing only the provided endpoint")
+            return {
+                'pages_crawled': 1 if initial_fetch_success else 0,
+                'visited_urls': list(self.visited_urls),
+                'urls_with_params': list(self.urls_with_params),
+                'forms': self.forms,
+                'all_discovered_urls': [start_url],
+            }
+
+        # ----------------------------------------------------------------
+        # Pre-crawl discovery: sitemap.xml + robots.txt links + API probes
+        # ----------------------------------------------------------------
+        _seed_urls = self._discover_seed_urls(target_base_url)
+        if _seed_urls:
+            logger.info(f"Pre-crawl discovery: +{len(_seed_urls)} URLs from sitemap/robots/API probes")
+
+        # BFS queue: (url, depth, parent_url)
+        # parent_url tracks which page discovered this URL — used to detect
+        # session-variable / second-order SQLi (form stores input, error on parent)
+        queue = deque([(target_base_url, 0, '')])
         self.discovered_urls.add(target_base_url)
-        
+
         # If original URL had query params, also add it for parameter extraction
         if parsed.query and start_url not in self.discovered_urls:
             self.discovered_urls.add(start_url)
-        
+
+        # Seed the queue with pre-discovered URLs (sitemap/robots/API probes)
+        for _seed_url in _seed_urls:
+            if _seed_url not in self.discovered_urls:
+                self.discovered_urls.add(_seed_url)
+                queue.append((_seed_url, 1, target_base_url))
+
+        # --js: popup/window.open URLs get FRONT-of-queue priority (appendleft)
+        # so they are visited before navigation links even under low max_pages limits.
+        # This is the key mechanism that lets --js detect DVWA high (session-input.php
+        # is only reachable via a JS popup, and navigation links would otherwise
+        # exhaust max_pages before the popup URL is ever crawled).
+        for _pu in reversed(getattr(self, '_js_popup_urls', [])):
+            if _pu not in self.discovered_urls:
+                self.discovered_urls.add(_pu)
+                queue.appendleft((_pu, 1, target_base_url))
+                logger.info(f"[JS] Popup URL queued with priority: {_pu}")
+
+        # Seed the queue with links extracted from the initial target page
+        # (includes onclick URLs discovered by _extract_links)
+        for _link in getattr(self, '_initial_links_from_target', []):
+            if _link not in self.discovered_urls:
+                self.discovered_urls.add(_link)
+                queue.append((_link, 1, target_base_url))
+
         pages_crawled = 1  # We already visited the target
         connection_errors = 0
         max_connection_errors = 3  # Fail after 3 consecutive connection errors
         
         while queue and pages_crawled < self.max_pages:
-            current_url, depth = queue.popleft()
+            current_url, depth, parent_url = queue.popleft()
             
             # Skip if already visited
             if current_url in self.visited_urls:
@@ -227,7 +305,14 @@ class WebCrawler:
                 # Parse HTML content
                 content_type = response.headers.get('Content-Type', '')
                 if 'text/html' in content_type:
-                    html = response.text
+                    # Use Playwright for JS rendering if --js flag was set
+                    if self.js_rendering:
+                        js_html = self._fetch_html_with_playwright(current_url)
+                        html = js_html if js_html else response.text
+                        if js_html:
+                            logger.debug(f"[JS] Used Playwright HTML for {current_url}")
+                    else:
+                        html = response.text
                     soup = BeautifulSoup(html, 'html.parser')
                     
                     # Extract links for further crawling
@@ -236,19 +321,21 @@ class WebCrawler:
                         for link in links:
                             if link not in self.discovered_urls:
                                 self.discovered_urls.add(link)
-                                queue.append((link, depth + 1))
-                    
-                    # Extract forms
+                                queue.append((link, depth + 1, current_url))
+
+                    # Extract forms — attach parent_url so detectors can check it
+                    # for session-variable / second-order SQLi patterns
                     forms = self._extract_forms(soup, current_url)
+                    for form in forms:
+                        form['parent_url'] = parent_url
                     self.forms.extend(forms)
-                    
+
                     # Extract AJAX/API endpoints from JavaScript
                     ajax_endpoints = self._extract_ajax_endpoints(html, current_url)
                     for endpoint in ajax_endpoints:
                         if endpoint not in self.discovered_urls:
                             self.discovered_urls.add(endpoint)
-                            # AJAX endpoints are high priority - check them even if max depth reached
-                            queue.append((endpoint, depth))
+                            queue.append((endpoint, depth, current_url))
             
             except requests.exceptions.RequestException as e:
                 # Connection error - increment counter
@@ -293,6 +380,186 @@ class WebCrawler:
             'all_discovered_urls': list(self.discovered_urls)
         }
     
+    # ------------------------------------------------------------------
+    # Enhanced pre-crawl discovery (Capa 7)
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Playwright / JS rendering support
+    # ------------------------------------------------------------------
+
+    def _check_playwright_available(self) -> None:
+        """Verify Playwright is installed; raise with install hint if not."""
+        try:
+            import playwright  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "Playwright is not installed. "
+                "To enable JS rendering, run:\n"
+                "    pip install 'pyth[js]'\n"
+                "Then install the browser binaries:\n"
+                "    playwright install chromium"
+            )
+
+    def _fetch_html_with_playwright(self, url: str) -> Optional[str]:
+        """
+        Fetch the fully-rendered HTML of a page using a headless Chromium browser.
+
+        Falls back to None on error (caller will use the requests response instead).
+        Requires `playwright` to be installed (`pip install pyth[js]`).
+        """
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+        except ImportError:
+            return None
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                context = browser.new_context(
+                    # Forward cookies already set on the http_client session
+                    extra_http_headers={
+                        k: v for k, v in self.http.session.headers.items()
+                        if k.lower() not in ('host', 'content-length')
+                    }
+                )
+                page = context.new_page()
+                # Mirror cookies from requests session
+                for cookie in self.http.session.cookies:
+                    try:
+                        context.add_cookies([{
+                            'name': cookie.name,
+                            'value': cookie.value,
+                            'url': url,
+                        }])
+                    except Exception:
+                        pass
+
+                page.goto(url, wait_until='networkidle', timeout=15000)
+                html = page.content()
+                browser.close()
+                return html
+        except Exception as e:
+            logger.debug(f"[JS] Playwright fetch failed for {url}: {e}")
+            return None
+
+    def _js_extract_popup_urls(self, html: str, base_url: str) -> List[str]:
+        """
+        Extract URLs that would be opened as popups or new windows from rendered HTML.
+
+        Looks for:
+          - onclick="popUp('url')"
+          - onclick="window.open('url', ...)"
+          - onclick="open('url', ...)"
+          - onclick="location.href='url'"
+          - data-popup="url"  (custom patterns)
+
+        Returns deduplicated list of absolute same-origin URLs.
+        """
+        import re as _re
+        popup_re = _re.compile(
+            r"""(?:window\.open|popUp|open)\s*\(\s*['"](/[^'"?#\s]*|[^'"?#\s]+\.(?:php|html?|asp|aspx|jsp|py|cfm))['"]""",
+            _re.IGNORECASE,
+        )
+        found: List[str] = []
+        soup = BeautifulSoup(html, 'html.parser')
+        for tag in soup.find_all(True):
+            for attr in ('onclick', 'onchange', 'data-popup', 'data-href'):
+                val = tag.get(attr, '')
+                if not val:
+                    continue
+                for m in popup_re.finditer(val):
+                    rel = m.group(1)
+                    abs_url = urljoin(base_url, rel)
+                    if (urlparse(abs_url).netloc == urlparse(self.base_domain).netloc
+                            and abs_url not in found):
+                        found.append(abs_url)
+        return found
+
+    # Common API / discovery paths to probe
+    _API_PROBE_PATHS = [
+        '/api/', '/api/v1/', '/api/v2/', '/rest/', '/graphql',
+        '/v1/', '/v2/', '/swagger.json', '/openapi.json',
+        '/sitemap.xml', '/sitemap_index.xml',
+    ]
+
+    def _discover_seed_urls(self, base_url: str) -> List[str]:
+        """
+        Discover additional seed URLs via sitemap.xml, robots.txt Sitemap
+        directives, and common API endpoint probing.
+
+        Returns list of absolute URLs same-origin as base_url.
+        """
+        seeds: List[str] = []
+        seen: Set[str] = set()
+        origin = urlparse(base_url).netloc
+
+        def _add(url: str) -> None:
+            abs_url = urljoin(base_url, url)
+            if urlparse(abs_url).netloc == origin and abs_url not in seen:
+                seen.add(abs_url)
+                seeds.append(abs_url)
+
+        # 1. Robots.txt Sitemap directives + Disallow paths (often valid endpoints)
+        try:
+            robots_url = urljoin(base_url, '/robots.txt')
+            resp = self.http.get(robots_url, timeout=5)
+            if resp.status_code == 200:
+                for line in resp.text.splitlines():
+                    line = line.strip()
+                    if line.lower().startswith('sitemap:'):
+                        sitemap_url = line.split(':', 1)[1].strip()
+                        _add(sitemap_url)
+                        logger.debug(f"[Crawler] robots.txt Sitemap: {sitemap_url}")
+                    elif line.lower().startswith('disallow:'):
+                        path = line.split(':', 1)[1].strip()
+                        # Only add concrete paths (not wildcards)
+                        if path and '*' not in path and '?' not in path and path != '/':
+                            _add(path)
+        except Exception as e:
+            logger.debug(f"[Crawler] robots.txt link extraction failed: {e}")
+
+        # 2. Sitemap.xml parsing
+        sitemap_candidates = [urljoin(base_url, '/sitemap.xml'),
+                               urljoin(base_url, '/sitemap_index.xml')]
+        for sitemap_url in sitemap_candidates:
+            if sitemap_url in seen:
+                continue
+            try:
+                resp = self.http.get(sitemap_url, timeout=5)
+                if resp.status_code == 200 and (
+                    'xml' in resp.headers.get('content-type', '').lower()
+                    or resp.text.strip().startswith('<?xml')
+                ):
+                    # Extract <loc> URLs
+                    locs = re.findall(r'<loc>\s*(https?://[^\s<]+)\s*</loc>', resp.text)
+                    for loc in locs:
+                        if urlparse(loc).netloc == origin:
+                            _add(loc)
+                    if locs:
+                        logger.debug(
+                            f"[Crawler] sitemap.xml: {len(locs)} URLs found"
+                        )
+            except Exception as e:
+                logger.debug(f"[Crawler] sitemap.xml fetch failed ({sitemap_url}): {e}")
+
+        # 3. Common API endpoint probing
+        for probe_path in self._API_PROBE_PATHS:
+            probe_url = urljoin(base_url, probe_path)
+            if probe_url in seen:
+                continue
+            try:
+                resp = self.http.get(probe_url, timeout=3)
+                if resp.status_code in (200, 401, 403):
+                    _add(probe_url)
+                    logger.debug(
+                        f"[Crawler] API probe hit: {probe_url} ({resp.status_code})"
+                    )
+            except Exception:
+                pass  # Probe silently
+
+        return seeds
+
     def _load_robots_txt(self, base_url: str):
         """
         Load and parse robots.txt to respect disallow rules.
@@ -451,6 +718,27 @@ class WebCrawler:
             absolute_url = urljoin(current_url, src)
             if urlparse(absolute_url).netloc == urlparse(self.base_domain).netloc:
                 links.add(absolute_url)
+
+        # Extract URLs from onclick="..." and similar JS event attributes
+        # Catches patterns like: onclick="popUp('session-input.php')"
+        #                         onclick="location.href='/admin/edit'"
+        _onclick_url_re = re.compile(
+            r"""(?:location\.(?:href|assign|replace)\s*[=(]\s*|"""
+            r"""window\.open\s*\(\s*|popUp\s*\(\s*|open\s*\(\s*)"""
+            r"""['"](/[^'"?#\s]*|[^'"?#\s]+\.(?:php|html?|asp|aspx|jsp|py|rb|cfm|do))['"]""",
+            re.IGNORECASE
+        )
+        for tag in soup.find_all(True):
+            for attr in ('onclick', 'onchange', 'onsubmit', 'data-url', 'data-href'):
+                val = tag.get(attr, '')
+                if not val:
+                    continue
+                for m in _onclick_url_re.finditer(val):
+                    rel = m.group(1)
+                    absolute_url = urljoin(current_url, rel)
+                    if urlparse(absolute_url).netloc == urlparse(self.base_domain).netloc:
+                        links.add(absolute_url)
+                        logger.debug(f"[onclick] Found URL in event handler: {absolute_url}")
         
         return list(links)
     

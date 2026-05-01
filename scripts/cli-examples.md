@@ -1,6 +1,70 @@
-# Pythia CLI Examples
+# Pythia CLI Examples — v0.2.0
 
 Comprehensive command-line usage examples for Pythia SQL injection scanner.
+
+---
+
+## Quick Reference — All 40 Flags
+
+```
+TARGET & MODE
+  --target URL          Target URL to scan (required)
+  --safe                Safe mode only: error-based + boolean-blind
+  --aggressive          All 6 methods + WAF bypass payloads (requires consent)
+  --no-crawl            Skip BFS crawl, test target URL only
+
+CRAWL CONTROL
+  --max-depth N         Crawl depth (default: 2)
+  --max-pages N         Max pages to crawl (default: 100)
+  --js                  Enable JS/onclick URL extraction (popup forms, SPAs)
+  --no-robots           Ignore robots.txt restrictions
+
+AUTH & HEADERS
+  --cookie "k=v"        Session cookie for authenticated scanning
+  --auth-header "K: V"  Custom HTTP header (can pass multiple times)
+  --user-agent "..."    Custom User-Agent string
+  --auto-csrf           Auto-extract and include CSRF tokens from forms
+
+HTTP
+  --rate N              Requests per second (default: 2.0 safe / 5.0 aggressive)
+  --threads N           Worker threads (default: 5, max 20)
+  --timeout N           Request timeout in seconds (default: 30)
+  --no-verify-ssl       Skip TLS certificate verification
+  --domain DOMAIN       Restrict crawl to specific domain
+
+CONSENT
+  --gen-consent DOMAIN  Generate consent token for a domain
+  --verify-consent METHOD  Verify token (http or dns)
+  --token TOKEN         Pass consent token directly
+
+AI
+  --use-ai              Enable AI-powered analysis
+  --ai-tone TONE        technical / non_technical / both
+  --ai-provider NAME    openai / anthropic / ollama
+  --ai-model MODEL      Specific model (e.g. gpt-4o, claude-3-5-sonnet)
+  --ai-stream           Stream AI output token by token
+  --ai-compare "a,b"    Multi-provider comparison in parallel
+  --ai-agent            Agent mode: autonomous NVD CVE lookup
+  --ai-budget N         Max spend per scan in USD
+  --api-key-env VAR     Environment variable name for API key
+
+OUTPUT
+  --html                Generate HTML report (in addition to JSON)
+  --report-dir PATH     Custom directory for reports
+  --sarif               Output SARIF 2.1.0 to stdout (logs go to stderr)
+  --log-file PATH       Write logs to file
+  --log-json            Structured JSON log format
+  --no-color            Disable ANSI colors
+  -v / -vv / -vvv       Verbosity levels
+
+CI/CD
+  --fail-on SEVERITY    Exit 10 if findings at threshold+ (critical/high/medium/low)
+  --diff last           Compare vs most recent scan for same target
+  --diff SCAN_ID        Compare vs specific scan by ID
+
+DATABASE
+  --db PATH             Custom SQLite database path (default: ~/.argos/argos.db)
+```
 
 ---
 
@@ -9,26 +73,30 @@ Comprehensive command-line usage examples for Pythia SQL injection scanner.
 ### Quick Scan (Safe Mode)
 
 ```bash
-# Minimal command - safe, non-intrusive checks (error-based + boolean-blind)
+# Default: error-based + boolean-blind only — no consent required
 python -m pyth --target http://example.com/products?id=1
 
-# Same with explicit safe mode
-python -m pyth --target http://example.com/products?id=1 --safe
-```
+# Explicit safe mode
+python -m pyth --target http://example.com/search?q=test --safe
 
-### With HTML Report
-
-```bash
-# Generate both JSON and HTML reports
+# With HTML report
 python -m pyth --target http://example.com/search?q=test --html
 ```
 
 ### Custom Output Directory
 
 ```bash
-# Save reports to specific directory
 python -m pyth --target http://example.com/users?id=5 \
   --report-dir ./client-reports \
+  --html
+```
+
+### Skip Crawl — Test Single Endpoint
+
+```bash
+# Only tests the exact URL, no link following
+python -m pyth --target "http://example.com/products?id=1" \
+  --no-crawl \
   --html
 ```
 
@@ -45,7 +113,7 @@ python -m pyth --target http://example.com/api/posts?id=1 -v
 # DEBUG level (-vv)
 python -m pyth --target http://example.com/products?category=books -vv
 
-# Maximum verbosity (includes HTTP details)
+# Maximum verbosity (HTTP details)
 python -m pyth --target http://example.com/search?q=test -vvv
 ```
 
@@ -56,13 +124,13 @@ python -m pyth --target http://example.com/search?q=test -vvv
 python -m pyth --target http://example.com/items?id=1 \
   --log-file ./logs/sqli-scan.log -vv
 
-# JSON formatted logs (for parsing/SIEM)
+# JSON formatted logs (for SIEM)
 python -m pyth --target http://example.com/api/users?id=1 \
   --log-json \
   --log-file ./logs/sqli-scan.json
 ```
 
-### Quiet Mode (CI/CD)
+### Quiet Mode
 
 ```bash
 # Suppress console output (only warnings+)
@@ -79,35 +147,46 @@ python -m pyth --target http://example.com/search?q=test --no-color
 ### Generate Consent Token
 
 ```bash
-# Generate token for domain
 python -m pyth --gen-consent example.com
 
-# Example output:
-# Token: verify-a3f9b2c1d8e4
-# Place at: https://example.com/.well-known/verify-a3f9b2c1d8e4.txt
+# Output:
+# Token: verify-a3f9b2c1d8e4f5a6
+# Place at: https://example.com/.well-known/verify-a3f9b2c1d8e4f5a6.txt
 ```
 
 ### Verify via HTTP
 
 ```bash
-# After placing token file
 python -m pyth --verify-consent http \
   --domain example.com \
-  --token verify-a3f9b2c1d8e4
+  --token verify-a3f9b2c1d8e4f5a6
 ```
 
 ### Verify via DNS
 
 ```bash
-# After adding TXT record
 python -m pyth --verify-consent dns \
   --domain example.com \
-  --token verify-a3f9b2c1d8e4
+  --token verify-a3f9b2c1d8e4f5a6
+```
+
+### Extend Lab Token (localhost)
+
+```bash
+# Localhost tokens expire — extend for lab use:
+sqlite3 ~/.argos/argos.db "
+UPDATE consent_tokens
+SET expires_at = datetime('now', '+30 days', 'utc')
+WHERE domain = 'localhost'
+  AND verified_at IS NOT NULL;
+"
 ```
 
 ---
 
 ## Aggressive Scanning
+
+All 6 detection methods: error-based, boolean-blind, time-based, UNION-based, second-order, ORDER BY. Requires verified consent token for the target domain.
 
 ### Full Workflow
 
@@ -115,35 +194,191 @@ python -m pyth --verify-consent dns \
 # 1. Generate token
 python -m pyth --gen-consent example.com
 
-# 2. Verify consent (HTTP method)
+# 2. Verify consent
 python -m pyth --verify-consent http \
   --domain example.com \
-  --token verify-abc123
+  --token verify-a3f9b2c1d8e4f5a6
 
-# 3. Run aggressive scan (includes time-based + UNION-based)
-python -m pyth --target http://example.com/products?id=1 \
+# 3. Run aggressive scan
+python -m pyth --target http://example.com \
   --aggressive \
-  --html
+  --html -v
 ```
 
-### With Custom Rate Limit
+### With WAF Bypass (Aggressive Only)
+
+WAF bypass payloads are included automatically in `--aggressive` mode:
+
+- Hex encoding: `' OR 0x41=0x41--`
+- URL double-encoding: `%2527OR%25271%2527%253D%25271`
+- Inline comments: `' /*!OR*/ '1'='1`
+- Case variation: `' oR '1'='1`
+- Whitespace variants: `'\tOR\t'1'='1`
 
 ```bash
-# Scan faster (10 req/sec for aggressive mode)
+# Aggressive automatically includes WAF bypass payloads
 python -m pyth --target http://example.com/search?q=test \
   --aggressive \
-  --rate 10 \
-  --threads 10
+  --html -v
 ```
 
 ### Deep Crawling
 
 ```bash
-# Crawl deeper and test more pages
+# More pages, deeper — comprehensive coverage
 python -m pyth --target http://example.com \
   --aggressive \
   --max-depth 5 \
-  --max-pages 200
+  --max-pages 200 \
+  --html
+```
+
+### JS-Aware Crawling
+
+```bash
+# Extracts URLs from onclick/popup links (needed for DVWA high, SPAs)
+python -m pyth --target http://example.com \
+  --aggressive \
+  --js \
+  --html -v
+```
+
+---
+
+## New Detection Vectors (v0.2.0)
+
+### Second-Order SQL Injection (PYTHIA-SQL-040)
+
+Detects store→retrieve patterns where a payload is stored first and executed later:
+
+```bash
+# PHP lab example: POST /register → GET /profile
+python -m pyth --target http://localhost:8081 \
+  --aggressive \
+  --html -vv
+
+# Look for PYTHIA-SQL-040 in report
+# Evidence will show: stored at /register, triggered at /profile/<username>
+```
+
+**How it works:**
+
+1. Scanner POSTs payloads to store routes (`/register`, `/comment`, `/profile`, `/settings`)
+2. Then GETs retrieval routes (`/dashboard`, `/profile`, `/admin`)
+3. Detects SQL errors or content changes in the response
+
+### ORDER BY / GROUP BY Injection (PYTHIA-SQL-050)
+
+Detects numeric sort parameter injection — entirely different from quoted-string SQLi:
+
+```bash
+# PHP lab: /products?sort=price is injectable
+python -m pyth --target http://localhost:8081 \
+  --aggressive \
+  --html -vv
+
+# Look for PYTHIA-SQL-050 in report
+# Detected by comparing responses for valid vs invalid ORDER BY values
+```
+
+**Payloads used:**
+
+```
+/products?sort=1                              → baseline
+/products?sort=(SELECT 1 FROM users)          → subquery
+/products?sort=CASE WHEN 1=1 THEN name ELSE price END
+```
+
+---
+
+## DBMS-Specific Finding Codes (v0.2.0)
+
+Pythia now uses specific codes per database type:
+
+| Code             | Type          | DBMS                  |
+| ---------------- | ------------- | --------------------- |
+| `PYTHIA-SQL-001` | Error-Based   | MySQL / MariaDB       |
+| `PYTHIA-SQL-002` | Error-Based   | PostgreSQL            |
+| `PYTHIA-SQL-003` | Error-Based   | MSSQL / SQL Server    |
+| `PYTHIA-SQL-004` | Error-Based   | Oracle                |
+| `PYTHIA-SQL-005` | Error-Based   | SQLite                |
+| `PYTHIA-SQL-010` | Boolean Blind | Generic               |
+| `PYTHIA-SQL-011` | Boolean Blind | Via header injection  |
+| `PYTHIA-SQL-020` | Time-Based    | MySQL SLEEP()         |
+| `PYTHIA-SQL-021` | Time-Based    | MSSQL WAITFOR DELAY   |
+| `PYTHIA-SQL-022` | Time-Based    | PostgreSQL pg_sleep() |
+| `PYTHIA-SQL-030` | UNION-Based   | GET/POST parameter    |
+| `PYTHIA-SQL-031` | UNION-Based   | Via cookie            |
+| `PYTHIA-SQL-040` | Second-Order  | Store → retrieve      |
+| `PYTHIA-SQL-050` | ORDER BY      | Numeric sort param    |
+
+All codes: **OWASP A03 Injection** / **CWE-89**
+
+---
+
+## Authentication
+
+### Session Cookie (DVWA, login-based apps)
+
+```bash
+# DVWA low security — get PHPSESSID from browser DevTools
+python -m pyth \
+  --target "http://localhost:8080/vulnerabilities/sqli/?id=1&Submit=Submit" \
+  --no-crawl \
+  --aggressive \
+  --cookie "PHPSESSID=your_session_id; security=low" \
+  --html -v
+
+# DVWA medium security
+python -m pyth \
+  --target "http://localhost:8080/vulnerabilities/sqli/?id=1&Submit=Submit" \
+  --no-crawl \
+  --aggressive \
+  --cookie "PHPSESSID=your_session_id; security=medium" \
+  --html -v
+
+# DVWA high security — uses session-var chain (needs --js)
+python -m pyth \
+  --target "http://localhost:8080/vulnerabilities/sqli/" \
+  --js \
+  --max-pages 2 \
+  --aggressive \
+  --cookie "PHPSESSID=your_session_id; security=high" \
+  --html -v
+```
+
+### Auth Headers (Bearer / API Key) — v0.2.0
+
+```bash
+# JWT Bearer token
+python -m pyth --target https://api.example.com/users \
+  --aggressive \
+  --auth-header "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  --html -v
+
+# Multiple headers (pass flag multiple times)
+python -m pyth --target https://api.example.com/products \
+  --aggressive \
+  --auth-header "Authorization: Bearer eyJhbGc..." \
+  --auth-header "X-API-Key: sk-prod-xxx" \
+  --auth-header "X-Tenant-ID: company-123" \
+  --html -v
+
+# API key only
+python -m pyth --target https://api.example.com/search \
+  --aggressive \
+  --auth-header "X-API-Key: your-api-key-here" \
+  --html -v
+```
+
+### CSRF Token Auto-Extraction
+
+```bash
+# Auto-extracts CSRF tokens from forms before submitting
+python -m pyth --target http://example.com/login \
+  --aggressive \
+  --auto-csrf \
+  --html -v
 ```
 
 ---
@@ -153,120 +388,392 @@ python -m pyth --target http://example.com \
 ### Basic AI Scan
 
 ```bash
-# Set API key
 export OPENAI_API_KEY="sk-..."
-
-# Generate both summaries (executive + technical)
 python -m pyth --target http://example.com/products?id=1 \
   --use-ai \
   --html
 ```
 
-### Technical Summary Only
+### Tone Options
 
 ```bash
-# For engineers (code examples, cheaper, faster)
+# Technical — for engineers (code examples, remediation steps)
 python -m pyth --target http://example.com/api/users?id=1 \
+  --use-ai --ai-tone technical --html
+
+# Executive — for stakeholders (business impact, compliance)
+python -m pyth --target http://example.com/search?q=test \
+  --use-ai --ai-tone non_technical --html
+
+# Both — full team (technical + executive in same report)
+python -m pyth --target http://example.com/products?id=1 \
+  --use-ai --ai-tone both --html
+```
+
+### Streaming Output
+
+```bash
+# Prints tokens progressively as AI generates them
+python -m pyth --target http://localhost:8081 \
   --use-ai \
+  --ai-stream \
   --ai-tone technical \
   --html
 ```
 
-### Executive Summary Only
+### AI Agent Mode — CVE Lookup
 
 ```bash
-# For stakeholders (business impact, compliance)
-python -m pyth --target http://example.com/search?q=test \
+# Agent autonomously queries NVD for CVEs matching detected DBMS + CWE-89
+python -m pyth --target http://localhost:8081 \
+  --aggressive \
   --use-ai \
-  --ai-tone non_technical \
+  --ai-agent \
+  --html -v
+
+# Each finding enriched with:
+# - Real CVE IDs from NVD
+# - CVSS scores
+# - NVD links (https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX)
+# - CWE-89 classification
+```
+
+### Multi-Provider Comparison
+
+```bash
+# Compare OpenAI vs Anthropic — both appear in separate HTML tabs
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-compare "openai,anthropic" \
+  --html
+
+# Compare specific models
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-compare "openai:gpt-4o-mini,anthropic:claude-3-5-haiku-20241022" \
   --html
 ```
 
-### Using Anthropic Claude
+### Budget Control
 
 ```bash
-# Set Anthropic API key
+# Stop AI analysis if cost exceeds $0.10
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-budget 0.10 \
+  --html
+```
+
+### Custom Provider & Model
+
+```bash
+# Use Anthropic Claude
 export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Edit config to use Claude
-nano config/default.yaml
-# Change: ai.provider: "anthropic"
-
-# Run scan
-python -m pyth --target http://example.com/products?id=1 \
+python -m pyth --target http://localhost:8081 \
   --use-ai \
+  --ai-provider anthropic \
+  --ai-model claude-3-5-sonnet-20241022 \
   --html
+
+# Use Ollama (local/offline)
+ollama pull llama3.2
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-provider ollama \
+  --ai-model llama3.2 \
+  --html
+
+# Custom env var for API key
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --api-key-env MY_OPENAI_KEY
 ```
 
-### Using Ollama (Local/Offline)
+---
+
+## CI/CD Integration (v0.2.0)
+
+### Exit Codes
+
+| Code | Meaning                                          |
+| ---- | ------------------------------------------------ |
+| `0`  | Clean scan — no findings at threshold            |
+| `10` | Findings found at `--fail-on` threshold or above |
+| `1`  | Technical error (network, consent, etc.)         |
+
+### --fail-on (Pipeline Gate)
 
 ```bash
-# Start Ollama server
-ollama serve
+# Block pipeline on critical findings
+python -m pyth --target https://staging.example.com \
+  --aggressive \
+  --fail-on critical
+echo "Exit: $?"   # 0 = clean, 10 = critical found
 
-# Pull model
-ollama pull llama3.2
+# Block on high or above
+python -m pyth --target https://staging.example.com \
+  --aggressive \
+  --fail-on high
 
-# Edit config to use Ollama
-nano config/default.yaml
-# Change: ai.provider: "ollama"
+# Block on any finding (strict mode)
+python -m pyth --target https://staging.example.com \
+  --safe \
+  --fail-on low
+```
 
-# Run scan (100% offline, slower)
-python -m pyth --target http://localhost:8081/products?id=1 \
+### SARIF Output (GitHub Security, GitLab SAST, Azure DevOps)
+
+```bash
+# Output SARIF to stdout; logs go to stderr automatically
+python -m pyth --target https://staging.example.com \
+  --aggressive \
+  --sarif > results.sarif
+
+# Validate SARIF is correct JSON
+python3 -c "import json; json.load(open('results.sarif')); print('Valid SARIF 2.1.0')"
+
+# Suppress log output if needed
+python -m pyth --target https://staging.example.com \
+  --aggressive \
+  --sarif 2>/dev/null > results.sarif
+
+# Combined: SARIF + fail-on + AI budget
+python -m pyth \
+  --target https://staging.example.com \
+  --aggressive \
+  --use-ai \
+  --ai-budget 0.05 \
+  --fail-on high \
+  --sarif > results.sarif
+```
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/sqli-security-scan.yml
+name: SQL Injection Security Scan
+
+on:
+    pull_request:
+    schedule:
+        - cron: "0 0 * * 0" # Weekly on Sunday
+    workflow_dispatch:
+
+jobs:
+    sqli-scan:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Install Pythia
+              run: pip install -r requirements.txt
+
+            - name: Run SQL Injection Scan (SARIF)
+              env:
+                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+              run: |
+                  python -m pyth \
+                    --target ${{ secrets.STAGING_URL }} \
+                    --aggressive \
+                    --sarif 2>/dev/null > results.sarif || true
+
+            - name: Upload SARIF to GitHub Security
+              uses: github/codeql-action/upload-sarif@v3
+              with:
+                  sarif_file: results.sarif
+
+            - name: Fail on High Findings
+              run: |
+                  python -m pyth \
+                    --target ${{ secrets.STAGING_URL }} \
+                    --aggressive \
+                    --fail-on high \
+                    --quiet --no-color
+```
+
+---
+
+## Diff Reports (v0.2.0)
+
+Track vulnerabilities across scans — find new ones, confirm fixed ones.
+
+### Compare vs Last Scan
+
+```bash
+# Run baseline scan
+python -m pyth --target http://localhost:8081 --aggressive --html -v
+
+# After fixing some issues, re-scan with diff
+python -m pyth --target http://localhost:8081 --aggressive --diff last --html -v
+
+# Report will show:
+# - NEW findings (appeared since last scan)
+# - FIXED findings (gone since last scan)
+# - PERSISTING findings (still present)
+```
+
+### Compare vs Specific Scan
+
+```bash
+# Get scan ID from database
+sqlite3 ~/.argos/argos.db \
+  "SELECT scan_id, started_at, total_findings FROM scans WHERE tool='pythia' ORDER BY scan_id DESC LIMIT 10;"
+
+# Diff vs scan ID 42
+python -m pyth --target http://localhost:8081 \
+  --aggressive \
+  --diff 42 \
+  --html -v
+```
+
+---
+
+## Docker Lab — Testing Environment
+
+### Using deploy.sh (Recommended)
+
+```bash
+cd docker && ./deploy.sh
+
+# Options:
+# 1) Build Pythia Scanner
+# 2) Start Testing Lab (DVWA, PHP, Flask)   ← for testing
+# 3) Build Scanner + Start Testing Lab
+# 4) Stop all services
+# 5) Remove all containers and data (reset)
+```
+
+### Manual Lab Commands
+
+```bash
+# Start
+sudo docker compose -f docker/compose.testing.yml up -d
+
+# Status
+sudo docker compose -f docker/compose.testing.yml ps
+
+# Stop
+sudo docker compose -f docker/compose.testing.yml down
+
+# Full reset (removes volumes)
+sudo docker compose -f docker/compose.testing.yml down -v
+```
+
+### Lab Services
+
+| Service               | URL                   | Notes                                       |
+| --------------------- | --------------------- | ------------------------------------------- |
+| DVWA                  | http://localhost:8080 | Requires /setup.php one-time init           |
+| PHP Vulnerable Shop   | http://localhost:8081 | MySQL, 26 findings in aggressive            |
+| Flask Vulnerable Blog | http://localhost:8082 | MySQL, 18 findings with `--js --aggressive` |
+| MySQL Lab DB          | localhost:3307        | root/root123                                |
+
+### Lab Test Scans
+
+```bash
+# PHP shop — full aggressive (26 findings expected)
+python -m pyth --target http://localhost:8081 --aggressive --html -v
+
+# Flask blog — JS-aware aggressive (18 findings expected)
+python -m pyth --target http://localhost:8082 --js --aggressive --html -v
+
+# DVWA low — direct page, no crawl (4 findings expected)
+python -m pyth \
+  --target "http://localhost:8080/vulnerabilities/sqli/?id=1&Submit=Submit" \
+  --no-crawl \
+  --aggressive \
+  --cookie "PHPSESSID=<your_id>; security=low" \
+  --html -v
+
+# DVWA high — session-var chain with JS (4 findings expected)
+python -m pyth \
+  --target "http://localhost:8080/vulnerabilities/sqli/" \
+  --js \
+  --max-pages 2 \
+  --aggressive \
+  --cookie "PHPSESSID=<your_id>; security=high" \
+  --html -v
+```
+
+### Run Pythia Scanner in Docker Container
+
+```bash
+# Build image
+docker build -f docker/Dockerfile -t pythia:latest .
+
+# Scan from container (use service names for lab targets)
+docker run --rm \
+  -v $(pwd)/reports:/reports \
+  pythia:latest \
+  --target http://php-vuln-app --safe --html
+
+# Scan external target from container
+docker run --rm \
+  -v $(pwd)/reports:/reports \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  pythia:latest \
+  --target http://example.com/products?id=1 \
   --use-ai \
   --html
 ```
 
 ---
 
-## SQL Injection-Specific Options
+## Database Operations
 
-### Crawler Configuration
+### View Scan History
 
 ```bash
-# Control crawl depth
-python -m pyth --target http://example.com \
-  --max-depth 3 \
-  --max-pages 100
+# Recent Pythia scans
+sqlite3 ~/.argos/argos.db \
+  "SELECT scan_id, target, total_findings, started_at FROM scans WHERE tool='pythia' ORDER BY scan_id DESC LIMIT 10;"
 
-# Shallow scan (quick)
-python -m pyth --target http://example.com \
-  --max-depth 1 \
-  --max-pages 10
+# All tools in shared DB
+sqlite3 ~/.argos/argos.db \
+  "SELECT tool, COUNT(*) as scans, SUM(total_findings) as total_findings FROM scans GROUP BY tool;"
+
+# Critical SQLi findings
+sqlite3 ~/.argos/argos.db \
+  "SELECT f.id, f.title, f.severity, s.target
+   FROM findings f
+   JOIN scans s ON f.scan_id = s.scan_id
+   WHERE s.tool='pythia' AND f.severity='critical'
+   ORDER BY s.started_at DESC LIMIT 20;"
+
+# Detection method breakdown
+sqlite3 ~/.argos/argos.db \
+  "SELECT detection_method, COUNT(*) as count
+   FROM findings
+   WHERE tool='pythia'
+   GROUP BY detection_method;"
+
+# AI cost tracking
+sqlite3 ~/.argos/argos.db \
+  "SELECT provider, model, SUM(input_tokens) as in_tokens, SUM(output_tokens) as out_tokens,
+          ROUND(SUM(cost_usd), 4) as total_usd
+   FROM ai_costs WHERE tool='pythia' GROUP BY provider, model;"
 ```
 
-### Testing Specific Parameters
+### Custom Database Path
 
 ```bash
-# Test single endpoint
-python -m pyth --target "http://example.com/products?id=1&category=books"
-
-# Test POST endpoint (crawler will find forms)
-python -m pyth --target http://example.com/login.php --aggressive
-```
-
-### Cookie-Based Testing
-
-```bash
-# Test with session cookies (authenticated scanning)
-python -m pyth --target "http://example.com/admin/users?id=1" \
-  --cookie "PHPSESSID=abc123;security=low" \
-  --safe
-
-# Multiple cookies
-python -m pyth --target "http://example.com/profile?user_id=5" \
-  --cookie "session_id=xyz789;auth_token=secret123" \
-  --aggressive
+python -m pyth --target http://example.com/products?id=1 \
+  --db ./projects/client-a/scans.db
 ```
 
 ---
 
 ## Advanced Options
 
-### Custom Timeout
+### Custom Timeout (Time-Based Detection)
 
 ```bash
-# Increase timeout for slow servers (important for time-based detection)
+# Increase for slow servers — important for time-based SQLi
 python -m pyth --target http://slow-api.example.com/search?q=test \
   --timeout 60
 ```
@@ -274,15 +781,13 @@ python -m pyth --target http://slow-api.example.com/search?q=test \
 ### Custom User-Agent
 
 ```bash
-# Spoof user agent
 python -m pyth --target http://example.com/api/posts?id=1 \
   --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 ```
 
-### Skip SSL Verification (Local Testing)
+### Skip SSL Verification (Test Environments)
 
 ```bash
-# For self-signed certs (test environments)
 python -m pyth --target https://localhost:8443/products?id=1 \
   --no-verify-ssl
 ```
@@ -290,91 +795,18 @@ python -m pyth --target https://localhost:8443/products?id=1 \
 ### Ignore robots.txt
 
 ```bash
-# Bypass robots.txt restrictions (use with caution)
 python -m pyth --target http://example.com \
   --no-robots \
   --aggressive
 ```
 
----
-
-## Database Operations
-
-### Custom Database Path
+### Domain Restriction
 
 ```bash
-# Use separate DB for this project
-python -m pyth --target http://example.com/products?id=1 \
-  --db ./projects/client-a/scans.db
-```
-
-### View Scan History (SQLite)
-
-```bash
-# Query recent Pythia scans
-sqlite3 ~/.argos/argos.db \
-  "SELECT * FROM scans WHERE tool='pythia' ORDER BY scan_id DESC LIMIT 10"
-
-# Critical SQL injection findings
-sqlite3 ~/.argos/argos.db \
-  "SELECT * FROM findings WHERE severity='critical' AND scan_id IN
-   (SELECT scan_id FROM scans WHERE tool='pythia')"
-
-# Verified domains (shared with Argos)
-sqlite3 ~/.argos/argos.db "SELECT * FROM v_verified_domains"
-
-# SQL injection statistics
-sqlite3 ~/.argos/argos.db \
-  "SELECT detection_method, COUNT(*) as count
-   FROM findings
-   WHERE tool='pythia'
-   GROUP BY detection_method"
-```
-
----
-
-## Docker Usage
-
-### Run in Container
-
-```bash
-# Build image
-docker build -f docker/Dockerfile -t pythia:latest .
-
-# Show help
-docker run --rm pythia:latest --help
-
-# Simple scan
-docker run --rm \
-  -v $(pwd)/reports:/reports \
-  pythia:latest \
-  --target http://example.com/products?id=1
-
-# With AI analysis
-docker run --rm \
-  -v $(pwd)/reports:/reports \
-  -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  pythia:latest \
-  --target http://example.com/search?q=test \
-  --use-ai \
-  --html
-```
-
-### Scan Docker Lab
-
-```bash
-# Start PHP lab
-cd docker/lab
-docker compose -f docker-compose.php.yml up -d
-
-# Scan from host
-python -m pyth --target http://localhost:8081/products.php?id=1 --html
-
-# Start Flask lab
-docker compose -f docker-compose.flask.yml up -d
-
-# Scan Flask app
-python -m pyth --target http://localhost:8082/api/posts?id=1 --aggressive --html
+# Only crawl links within example.com (ignore external links)
+python -m pyth --target http://example.com \
+  --domain example.com \
+  --aggressive
 ```
 
 ---
@@ -387,224 +819,124 @@ python -m pyth --target http://localhost:8082/api/posts?id=1 --aggressive --html
 #!/bin/bash
 # client-sqli-scan.sh
 
-TARGET="$1"
-CLIENT="$2"
+TARGET="$1"    # e.g., example.com
+CLIENT="$2"    # e.g., acme-corp
 
-echo "🔮 Scanning $TARGET for SQL injection vulnerabilities..."
-echo "Client: $CLIENT"
+echo "Scanning $TARGET for SQL injection vulnerabilities..."
 
 # 1. Generate consent token
-echo "Step 1/4: Generating consent token..."
 python -m pyth --gen-consent $TARGET
 
 # 2. Wait for client to place token
-read -p "Step 2/4: Press enter after token is placed at /.well-known/..."
+read -p "Press enter after token is placed at /.well-known/..."
 
 # 3. Verify consent
-echo "Step 3/4: Verifying consent..."
 python -m pyth --verify-consent http \
   --domain $TARGET \
   --token $(cat token.txt)
 
-# 4. Scan with AI analysis
-echo "Step 4/4: Running comprehensive SQL injection scan..."
+# 4. Run aggressive scan with AI
 python -m pyth \
-  --target "http://$TARGET" \
+  --target "https://$TARGET" \
   --aggressive \
   --use-ai \
   --ai-tone both \
+  --ai-agent \
   --html \
   --report-dir ./clients/$CLIENT/reports \
   --max-depth 5 \
   --max-pages 200 \
   -vv
 
-echo "✅ Scan complete! Check ./clients/$CLIENT/reports/"
+echo "Complete — check ./clients/$CLIENT/reports/"
 ```
 
-### CI/CD Integration (GitHub Actions)
-
-```yaml
-# .github/workflows/sqli-security-scan.yml
-name: SQL Injection Security Scan
-
-on:
-    schedule:
-        - cron: "0 0 * * 0" # Weekly on Sunday
-    workflow_dispatch: # Manual trigger
-
-jobs:
-    sqli-scan:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v3
-
-            - name: Setup Python
-              uses: actions/setup-python@v4
-              with:
-                  python-version: "3.11"
-
-            - name: Install Pythia
-              run: |
-                  pip install --upgrade pip
-                  pip install -r requirements.txt
-
-            - name: Run SQL Injection Scan
-              env:
-                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-              run: |
-                  python -m pyth \
-                    --target ${{ secrets.TARGET_URL }} \
-                    --aggressive \
-                    --use-ai \
-                    --html \
-                    --quiet \
-                    --no-color \
-                    --report-dir ./reports
-
-            - name: Upload Reports
-              uses: actions/upload-artifact@v3
-              with:
-                  name: sqli-security-reports
-                  path: ./reports/
-
-            - name: Check for Critical Findings
-              run: |
-                  CRITICAL=$(jq '.summary.critical' ./reports/*.json | head -1)
-                  if [ "$CRITICAL" -gt 0 ]; then
-                    echo "⚠️ Critical SQL injection vulnerabilities found!"
-                    exit 1
-                  fi
-```
-
-### Cron Job (Linux)
+### Pre-Deployment Check
 
 ```bash
-# Add to crontab
-crontab -e
+#!/bin/bash
+# pre-deploy-check.sh
 
-# Scan every Sunday at 2 AM
-0 2 * * 0 cd /opt/pythia && python -m pyth --target http://myapp.com --aggressive --html >> /var/log/pythia.log 2>&1
+STAGING_URL="http://staging.example.com"
 
-# Scan daily (quick safe mode check)
-0 1 * * * cd /opt/pythia && python -m pyth --target http://myapp.com --safe --html >> /var/log/pythia-daily.log 2>&1
+python -m pyth \
+  --target "$STAGING_URL" \
+  --aggressive \
+  --fail-on high \
+  --sarif > pre-deploy-results.sarif
+
+RESULT=$?
+if [ $RESULT -eq 10 ]; then
+  echo "DEPLOYMENT BLOCKED — SQL injection vulnerabilities found"
+  exit 1
+elif [ $RESULT -eq 0 ]; then
+  echo "DEPLOYMENT APPROVED — No SQL injection found"
+  exit 0
+else
+  echo "SCAN ERROR — Check logs"
+  exit 1
+fi
 ```
 
-### Jenkins Pipeline
+### Authenticated API Scan
 
-```groovy
-// Jenkinsfile
-pipeline {
-    agent any
+```bash
+# REST API with Bearer token — test all endpoints
+python -m pyth \
+  --target https://api.example.com/v1 \
+  --aggressive \
+  --auth-header "Authorization: Bearer $API_TOKEN" \
+  --use-ai \
+  --ai-agent \
+  --html -vv
+```
 
-    environment {
-        OPENAI_API_KEY = credentials('openai-api-key')
-        TARGET_URL = 'http://staging.example.com'
-    }
+### Remediation Verification with Diff
 
-    stages {
-        stage('Setup') {
-            steps {
-                sh 'pip install -r requirements.txt'
-            }
-        }
+```bash
+#!/bin/bash
+# verify-fix.sh
 
-        stage('SQL Injection Scan') {
-            steps {
-                sh '''
-                    python -m pyth \
-                      --target ${TARGET_URL} \
-                      --aggressive \
-                      --use-ai \
-                      --html \
-                      --quiet \
-                      --report-dir ./reports
-                '''
-            }
-        }
+TARGET=$1
 
-        stage('Archive Reports') {
-            steps {
-                archiveArtifacts artifacts: 'reports/**/*', fingerprint: true
-            }
-        }
+# Scan before fix
+echo "Scanning before fix..."
+python -m pyth --target "$TARGET" --aggressive --html -v
 
-        stage('Check Results') {
-            steps {
-                script {
-                    def report = readJSON file: 'reports/pythia_sqli_report_*.json'
-                    if (report.summary.critical > 0) {
-                        error("Critical SQL injection vulnerabilities detected!")
-                    }
-                }
-            }
-        }
-    }
-}
+SCAN_ID=$(sqlite3 ~/.argos/argos.db \
+  "SELECT scan_id FROM scans WHERE tool='pythia' ORDER BY scan_id DESC LIMIT 1;")
+
+echo "Baseline scan ID: $SCAN_ID"
+read -p "Apply fixes and press enter..."
+
+# Scan after fix with diff
+echo "Scanning after fix..."
+python -m pyth --target "$TARGET" \
+  --aggressive \
+  --diff $SCAN_ID \
+  --html -v
+
+# Report shows: FIXED / NEW / PERSISTING sections
 ```
 
 ---
 
-## Troubleshooting
-
-### Debug Connection Issues
+## Cron Job / Scheduled Scanning
 
 ```bash
-# Maximum verbosity + extended timeout
-python -m pyth --target http://example.com/products?id=1 \
-  -vvv \
-  --timeout 120
-```
+# Add to crontab: crontab -e
 
-### Test Specific Detection Methods
+# Weekly aggressive scan with HTML report
+0 2 * * 0 cd /opt/pythia && python -m pyth --target http://myapp.com \
+  --aggressive --html --quiet >> /var/log/pythia-weekly.log 2>&1
 
-```bash
-# Test only error-based (safe mode)
-python -m pyth --target http://example.com/search?q=test --safe -vv
+# Daily safe check
+0 1 * * * cd /opt/pythia && python -m pyth --target http://myapp.com \
+  --safe --html --quiet >> /var/log/pythia-daily.log 2>&1
 
-# Test all methods including time-based (requires consent)
-python -m pyth --target http://example.com/users?id=1 --aggressive -vv
-```
-
-### Test Consent Token Manually
-
-```bash
-# Check if token file is accessible
-curl http://example.com/.well-known/verify-abc123.txt
-# Should return: verify-abc123
-
-# Check DNS TXT record
-dig TXT example.com +short
-# Or: nslookup -type=TXT example.com
-```
-
-### Verify Installation
-
-```bash
-# Check version
-python -m pyth --version
-
-# Check dependencies
-pip list | grep -E 'requests|beautifulsoup4|langchain'
-
-# Test database connection (shared with Argos)
-python -c "from pyth.core.db import get_db; db = get_db(); print('DB OK')"
-
-# Test HTTP client
-python -c "from pyth.core.http_client import HTTPClient; client = HTTPClient(); print('HTTP Client OK')"
-```
-
-### Test AI Integration
-
-```bash
-# Test OpenAI
-python -m pyth.core.ai openai
-
-# Test Anthropic
-python -m pyth.core.ai anthropic
-
-# Test Ollama
-python -m pyth.core.ai ollama
+# Diff scan — compare vs last (track changes over time)
+0 3 * * 1 cd /opt/pythia && python -m pyth --target http://myapp.com \
+  --aggressive --diff last --html --quiet >> /var/log/pythia-diff.log 2>&1
 ```
 
 ---
@@ -615,55 +947,208 @@ python -m pyth.core.ai ollama
 
 ```bash
 # Quick safe scan
-pyth --target "http://example.com/products?id=1"
+python -m pyth --target "http://example.com/products?id=1"
 
-# Client deliverable (full scan with AI)
-pyth --target "http://example.com/search?q=test" \
+# Client deliverable (full aggressive + AI + HTML)
+python -m pyth --target "http://example.com" \
   --aggressive \
-  --use-ai \
-  --html \
-  -vv
+  --use-ai --ai-tone both --ai-agent \
+  --html -vv
 
-# Local testing (vulnerable lab)
-pyth --target http://localhost:8081/products.php?id=1 \
-  --no-verify-ssl \
+# Local lab testing (PHP shop)
+python -m pyth --target http://localhost:8081 \
+  --aggressive --html -v
+
+# Local lab testing (Flask blog with JS)
+python -m pyth --target http://localhost:8082 \
+  --js --aggressive --html -v
+
+# Single endpoint test (no crawl)
+python -m pyth --target "http://example.com/api/users?id=5" \
+  --no-crawl --aggressive --html
+
+# Authenticated API scan
+python -m pyth --target "https://api.example.com/v1" \
+  --aggressive \
+  --auth-header "Authorization: Bearer $TOKEN" \
   --html
 
-# Fast aggressive scan
-pyth --target "http://example.com/api/posts?id=1" \
-  --aggressive \
-  --rate 20 \
-  --threads 15
+# CI/CD pipeline gate
+python -m pyth --target "https://staging.example.com" \
+  --aggressive --fail-on high --sarif > results.sarif
 
-# Quiet mode (for scripts/CI)
-pyth --target "http://example.com/users?id=5" \
-  --quiet \
-  --no-color \
-  --log-json \
-  --log-file scan.json
+# Diff-based tracking (track fixes)
+python -m pyth --target "http://example.com" \
+  --aggressive --diff last --html -v
 
-# Minimal AI cost (technical only)
-pyth --target "http://example.com/products?id=1" \
-  --use-ai \
-  --ai-tone technical
+# Cheap AI scan (technical only, mini model)
+python -m pyth --target "http://example.com/products?id=1" \
+  --use-ai --ai-tone technical --html
 
 # Deep authenticated scan
-pyth --target "http://example.com/admin/users?id=1" \
-  --cookie "PHPSESSID=abc123" \
+python -m pyth --target "http://example.com/admin" \
+  --cookie "PHPSESSID=abc123; csrf_token=xyz" \
   --aggressive \
-  --max-depth 5
+  --max-depth 5 --max-pages 300
 ```
 
 ### Environment Variables
 
 ```bash
-# Common env vars
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
-export PYTHIA_REPORT_DIR="./reports"
-export PYTHIA_DATABASE="./pythia.db"
-export PYTHIA_LOG_LEVEL="DEBUG"
-export PYTHIA_RATE_LIMIT="5.0"
+```
+
+---
+
+## Troubleshooting
+
+### No Vulnerabilities Detected
+
+```bash
+# Verify target is actually vulnerable
+curl "http://localhost:8081/?page=products&id=1'"
+# Should return SQL error, not 404
+
+# Use --aggressive instead of --safe
+# Use --no-crawl to test the exact URL
+python -m pyth --target "http://example.com/products?id=1" --no-crawl --aggressive -vv
+```
+
+### SARIF Has Mixed Content (Logs + JSON)
+
+```bash
+# --sarif auto-redirects logs to stderr — use 2>/dev/null to suppress
+python -m pyth --target http://localhost:8081 --sarif 2>/dev/null > results.sarif
+```
+
+### Scan Too Slow
+
+```bash
+# Skip crawl for direct endpoint testing
+python -m pyth --target "http://example.com/products?id=1" --no-crawl --aggressive
+
+# Limit pages
+python -m pyth --target http://example.com --max-pages 10 --aggressive
+```
+
+### Consent Denied / Token Expired
+
+```bash
+# Re-verify consent
+python -m pyth --verify-consent http \
+  --domain example.com \
+  --token verify-your-token
+
+# Extend localhost token
+sqlite3 ~/.argos/argos.db "
+UPDATE consent_tokens
+SET expires_at = datetime('now', '+30 days', 'utc')
+WHERE domain = 'localhost' AND verified_at IS NOT NULL;
+"
+```
+
+### DVWA Session Expired
+
+```bash
+# Re-login via browser, copy fresh PHPSESSID from DevTools
+# Application → Cookies → localhost → PHPSESSID
+```
+
+### Verify Installation
+
+```bash
+# Check version (should be 0.2.0)
+python -m pyth --version
+
+# Test dependencies
+pip list | grep -E 'requests|beautifulsoup4|langchain'
+
+# Test database connection
+python -c "from pyth.core.db import get_db; get_db(); print('DB OK')"
+
+# Test AI provider
+python -m pyth.core.ai openai
+python -m pyth.core.ai anthropic
+```
+
+---
+
+## Tips & Tricks
+
+### 1. Scan Multiple Endpoints
+
+```bash
+while read url; do
+  echo "Scanning: $url"
+  python -m pyth --target "$url" --html --quiet
+  sleep 5
+done < endpoints.txt
+```
+
+### 2. Extract Findings by Severity
+
+```bash
+# Critical findings only
+jq '.findings[] | select(.severity=="critical")' report.json
+
+# Count by detection method
+jq '.findings | group_by(.detection_method) |
+    map({method: .[0].detection_method, count: length})' report.json
+
+# All PYTHIA-SQL-040 (second-order)
+jq '.findings[] | select(.id=="PYTHIA-SQL-040")' report.json
+```
+
+### 3. Track Findings Over Time (DB)
+
+```bash
+sqlite3 ~/.argos/argos.db <<EOF
+SELECT
+  DATE(started_at) as scan_date,
+  COUNT(*) as total_findings,
+  SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) as critical,
+  SUM(CASE WHEN severity='high' THEN 1 ELSE 0 END) as high
+FROM findings
+WHERE tool='pythia'
+  AND scan_id IN (SELECT scan_id FROM scans WHERE domain='example.com')
+GROUP BY DATE(started_at)
+ORDER BY scan_date DESC;
+EOF
+```
+
+### 4. Check DBMS Distribution
+
+```bash
+jq -r '.findings[] | "\(.id): \(.evidence.dbms // "unknown")"' report.json | sort | uniq -c
+```
+
+### 5. Generate Executive Summary
+
+```bash
+jq '{
+  target: .target,
+  date: .date,
+  mode: .mode,
+  summary: .summary,
+  contextual_score: (.findings[0].contextual_score // null),
+  critical_findings: [.findings[] | select(.severity=="critical") | {id: .id, title: .title, parameter: .parameter}]
+}' report.json > executive-summary.json
+```
+
+### 6. Monitor AI Costs
+
+```bash
+# All AI costs across Argos Suite
+cat ~/.argos/costs.json | \
+  python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+pythia = [e for e in data.get('entries', []) if e.get('tool') == 'pythia']
+total = sum(e.get('cost_usd', 0) for e in pythia)
+print(f'Pythia AI scans: {len(pythia)}')
+print(f'Total cost: \${total:.4f}')
+"
 ```
 
 ---
@@ -680,470 +1165,19 @@ python -m pyth --version
 # Validate configuration
 python -c "from pyth.core.config import Config; c = Config.load(); print('Config OK')"
 
-# Check shared database status
-sqlite3 ~/.argos/argos.db "SELECT COUNT(*) FROM scans WHERE tool='pythia'"
+# Check shared database
+sqlite3 ~/.argos/argos.db "SELECT COUNT(*) as scans FROM scans WHERE tool='pythia';"
+```
+
+**Issues & feedback:** https://github.com/rodhnin/pythia-sql-clairvoyance/issues
+
+**Quick Start for first scan:**
+
+```bash
+python -m pyth --target "http://localhost:8081" --safe --html -v
 ```
 
 ---
 
-## Tips & Tricks
-
-### 1. Scan Multiple Endpoints
-
-```bash
-# Loop through URLs file
-while read url; do
-  echo "Scanning: $url"
-  python -m pyth --target "$url" --html
-  sleep 5  # Be respectful
-done < endpoints.txt
-```
-
-**Example endpoints.txt:**
-
-```
-http://example.com/products?id=1
-http://example.com/search?q=test
-http://example.com/users?id=5
-http://example.com/api/posts?id=10
-```
-
-### 2. Compare Scans Over Time
-
-```bash
-# Initial baseline scan
-python -m pyth --target http://example.com/products?id=1 \
-  --html \
-  --report-dir ./baseline
-
-# After remediation
-python -m pyth --target http://example.com/products?id=1 \
-  --html \
-  --report-dir ./after-fix
-
-# Compare with jq
-jq -s '.[0].summary as $before | .[1].summary as $after |
-  {
-    before: $before,
-    after: $after,
-    improvement: {
-      critical: ($before.critical - $after.critical),
-      high: ($before.high - $after.high)
-    }
-  }' \
-  baseline/pythia_*.json after-fix/pythia_*.json
-```
-
-### 3. Filter Findings by Severity
-
-```bash
-# Extract only critical SQL injection findings
-jq '.findings[] | select(.severity=="critical")' report.json
-
-# Count findings by detection method
-jq '.findings | group_by(.detection_method) |
-    map({method: .[0].detection_method, count: length})' report.json
-```
-
-### 4. Generate Tokens in Batch
-
-```bash
-# Generate tokens for multiple domains
-for domain in app1.com app2.com app3.com; do
-  echo "Generating token for $domain..."
-  python -m pyth --gen-consent $domain | tee tokens-$domain.txt
-done
-```
-
-### 5. Auto-Deploy Token to Server
-
-```bash
-#!/bin/bash
-# auto-deploy-token.sh
-
-DOMAIN=$1
-TOKEN=$2
-SERVER=$3
-
-# Create .well-known directory
-ssh $SERVER "mkdir -p /var/www/html/.well-known"
-
-# Upload token file
-echo "$TOKEN" | ssh $SERVER "cat > /var/www/html/.well-known/$TOKEN.txt"
-
-# Verify it's accessible
-curl http://$DOMAIN/.well-known/$TOKEN.txt
-
-# Run verification
-python -m pyth --verify-consent http --domain $DOMAIN --token $TOKEN
-```
-
-### 6. Automated Remediation Verification
-
-```bash
-#!/bin/bash
-# verify-fix.sh
-
-TARGET=$1
-
-# Scan before
-echo "Scanning before fix..."
-python -m pyth --target "$TARGET" \
-  --aggressive \
-  --report-dir ./before \
-  --html
-
-BEFORE_CRITICAL=$(jq '.summary.critical' ./before/pythia_*.json | head -1)
-
-echo "Found $BEFORE_CRITICAL critical issues"
-read -p "Apply fixes and press enter..."
-
-# Scan after
-echo "Scanning after fix..."
-python -m pyth --target "$TARGET" \
-  --aggressive \
-  --report-dir ./after \
-  --html
-
-AFTER_CRITICAL=$(jq '.summary.critical' ./after/pythia_*.json | head -1)
-
-echo "Critical issues remaining: $AFTER_CRITICAL"
-
-if [ "$AFTER_CRITICAL" -eq 0 ]; then
-  echo "✅ All critical SQL injection vulnerabilities fixed!"
-else
-  echo "⚠️ Still $AFTER_CRITICAL critical vulnerabilities remaining"
-fi
-```
-
-### 7. Extract Database Information
-
-```bash
-# Extract detected database types from reports
-jq -r '.findings[] | select(.evidence.dbms) |
-       "\(.affected_component): \(.evidence.dbms)"' report.json
-```
-
-### 8. Generate Executive Summary
-
-```bash
-# Create quick summary from JSON
-jq '{
-  target: .target,
-  date: .date,
-  mode: .mode,
-  summary: .summary,
-  critical_findings: [.findings[] | select(.severity=="critical") | .title]
-}' report.json > executive-summary.json
-```
-
-### 9. Monitor False Positive Rate
-
-```bash
-# Track findings over multiple scans
-sqlite3 ~/.argos/argos.db <<EOF
-SELECT
-  DATE(started_at) as scan_date,
-  COUNT(*) as total_findings,
-  SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) as critical
-FROM findings
-WHERE tool='pythia'
-  AND scan_id IN (SELECT scan_id FROM scans WHERE domain='example.com')
-GROUP BY DATE(started_at)
-ORDER BY scan_date DESC;
-EOF
-```
-
-### 10. Create Custom Wordlist for Testing
-
-```bash
-# Create endpoint wordlist from sitemap
-curl http://example.com/sitemap.xml | \
-  grep -oP '(?<=<loc>)[^<]+' | \
-  grep '?' > endpoints.txt
-
-# Scan each endpoint
-cat endpoints.txt | while read endpoint; do
-  python -m pyth --target "$endpoint" --safe
-done
-```
-
----
-
-## Real-World Scenarios
-
-### Scenario 1: Pre-Deployment Security Check
-
-```bash
-#!/bin/bash
-# pre-deploy-check.sh
-
-STAGING_URL="http://staging.example.com"
-
-echo "🔮 Running pre-deployment SQL injection scan..."
-
-python -m pyth \
-  --target "$STAGING_URL" \
-  --aggressive \
-  --use-ai \
-  --ai-tone technical \
-  --html \
-  --report-dir ./pre-deploy
-
-# Check results
-CRITICAL=$(jq '.summary.critical' ./pre-deploy/pythia_*.json | head -1)
-HIGH=$(jq '.summary.high' ./pre-deploy/pythia_*.json | head -1)
-
-if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 2 ]; then
-  echo "❌ DEPLOYMENT BLOCKED"
-  echo "Critical: $CRITICAL, High: $HIGH"
-  echo "Fix SQL injection vulnerabilities before deploying to production"
-  exit 1
-else
-  echo "✅ DEPLOYMENT APPROVED"
-  echo "No critical SQL injection vulnerabilities detected"
-  exit 0
-fi
-```
-
-### Scenario 2: Bug Bounty Reconnaissance
-
-```bash
-#!/bin/bash
-# bounty-recon.sh
-
-PROGRAM=$1  # e.g., "hackerone-example"
-TARGET=$2   # e.g., "https://target.com"
-
-echo "🔮 Starting SQL injection reconnaissance for $PROGRAM..."
-
-# Create project directory
-mkdir -p ./bounty/$PROGRAM
-
-# Quick safe scan first
-python -m pyth \
-  --target "$TARGET" \
-  --safe \
-  --max-depth 3 \
-  --max-pages 50 \
-  --report-dir ./bounty/$PROGRAM/quick \
-  -vv
-
-# Check if any findings
-FINDINGS=$(jq '.summary.critical + .summary.high' ./bounty/$PROGRAM/quick/pythia_*.json | head -1)
-
-if [ "$FINDINGS" -gt 0 ]; then
-  echo "⚠️ Potential SQL injection found! Running deep scan..."
-
-  # Deep scan (requires consent for aggressive mode)
-  # Only use if you have authorization!
-  python -m pyth \
-    --target "$TARGET" \
-    --safe \
-    --max-depth 5 \
-    --max-pages 200 \
-    --report-dir ./bounty/$PROGRAM/deep \
-    --html \
-    -vv
-
-  echo "📋 Review findings in ./bounty/$PROGRAM/"
-else
-  echo "✅ No obvious SQL injection vectors found"
-fi
-```
-
-### Scenario 3: Compliance Audit
-
-```bash
-#!/bin/bash
-# compliance-audit.sh
-
-# PCI-DSS, GDPR, HIPAA require protection against SQL injection
-
-COMPANY="acme-corp"
-APPLICATIONS=(
-  "https://customer-portal.acme.com"
-  "https://payment.acme.com"
-  "https://api.acme.com"
-)
-
-mkdir -p ./compliance/$COMPANY
-
-for app in "${APPLICATIONS[@]}"; do
-  APP_NAME=$(echo $app | sed 's/https\?:\/\///' | sed 's/\//-/g')
-
-  echo "Auditing: $app"
-
-  python -m pyth \
-    --target "$app" \
-    --aggressive \
-    --use-ai \
-    --ai-tone non_technical \
-    --html \
-    --report-dir "./compliance/$COMPANY/$APP_NAME" \
-    -vv
-done
-
-# Generate compliance summary
-echo "Generating compliance report..."
-python3 << 'PYTHON'
-import json
-import glob
-from pathlib import Path
-
-reports = glob.glob("./compliance/**/pythia_*.json", recursive=True)
-summary = {
-    "total_apps": len(reports),
-    "compliant": 0,
-    "non_compliant": 0,
-    "critical_issues": 0
-}
-
-for report_path in reports:
-    with open(report_path) as f:
-        data = json.load(f)
-        if data['summary']['critical'] == 0 and data['summary']['high'] == 0:
-            summary['compliant'] += 1
-        else:
-            summary['non_compliant'] += 1
-            summary['critical_issues'] += data['summary']['critical']
-
-print(json.dumps(summary, indent=2))
-PYTHON
-```
-
----
-
-## Advanced Integration Examples
-
-### Slack Notifications
-
-```bash
-#!/bin/bash
-# scan-and-notify.sh
-
-TARGET=$1
-SLACK_WEBHOOK=$2
-
-# Run scan
-python -m pyth --target "$TARGET" --aggressive --html --quiet
-
-# Parse results
-REPORT=$(ls -t ~/.pythia/reports/pythia_*.json | head -1)
-CRITICAL=$(jq '.summary.critical' $REPORT)
-HIGH=$(jq '.summary.high' $REPORT)
-
-# Send to Slack
-if [ "$CRITICAL" -gt 0 ]; then
-  MESSAGE="🚨 *CRITICAL SQL INJECTION* found on $TARGET\nCritical: $CRITICAL | High: $HIGH"
-  COLOR="danger"
-else
-  MESSAGE="✅ SQL injection scan completed for $TARGET\nCritical: $CRITICAL | High: $HIGH"
-  COLOR="good"
-fi
-
-curl -X POST $SLACK_WEBHOOK \
-  -H 'Content-Type: application/json' \
-  -d "{\"attachments\": [{\"color\": \"$COLOR\", \"text\": \"$MESSAGE\"}]}"
-```
-
-### Jira Ticket Creation
-
-```python
-#!/usr/bin/env python3
-# create-jira-tickets.py
-
-import json
-import sys
-from jira import JIRA
-
-# Configuration
-JIRA_URL = "https://your-company.atlassian.net"
-JIRA_TOKEN = "your-api-token"
-PROJECT_KEY = "SEC"
-
-# Load Pythia report
-with open(sys.argv[1]) as f:
-    report = json.load(f)
-
-# Connect to Jira
-jira = JIRA(server=JIRA_URL, token_auth=JIRA_TOKEN)
-
-# Create tickets for critical findings
-for finding in report['findings']:
-    if finding['severity'] in ['critical', 'high']:
-        issue = jira.create_issue(
-            project=PROJECT_KEY,
-            summary=f"SQL Injection: {finding['title']}",
-            description=f"""
-*Target:* {report['target']}
-*Severity:* {finding['severity'].upper()}
-*Detection Method:* {finding['detection_method']}
-
-h3. Description
-{finding['description']}
-
-h3. Evidence
-{finding['evidence']['context']}
-
-h3. Remediation
-{finding['recommendation']}
-            """,
-            issuetype={'name': 'Security Bug'},
-            priority={'name': 'Critical' if finding['severity'] == 'critical' else 'High'}
-        )
-        print(f"Created ticket: {issue.key}")
-```
-
----
-
-## Performance Tuning
-
-### Fast Scan (Quick Check)
-
-```bash
-# Minimal crawling, fast rate
-python -m pyth --target http://example.com \
-  --safe \
-  --max-depth 1 \
-  --max-pages 10 \
-  --rate 10 \
-  --threads 5 \
-  --timeout 10
-```
-
-### Thorough Scan (Maximum Coverage)
-
-```bash
-# Deep crawling, comprehensive testing
-python -m pyth --target http://example.com \
-  --aggressive \
-  --max-depth 5 \
-  --max-pages 500 \
-  --rate 3 \
-  --threads 10 \
-  --timeout 60
-```
-
-### Resource-Constrained Environment
-
-```bash
-# Low memory/CPU usage
-python -m pyth --target http://example.com \
-  --safe \
-  --rate 2 \
-  --threads 1 \
-  --timeout 30
-```
-
----
-
-**More examples?** Check the [docs/](../docs/) folder or open an issue!
-
-**Quick Start:** For your first scan, just run:
-
-```bash
-python -m pyth --target "http://testphp.vulnweb.com/artists.php?artist=1"
-```
-
-**Need Help?** Join the discussion: https://github.com/rodhnin/pythia-sql-clairvoyance/discussions
+_Pythia v0.2.0 — May 2026_
+_Author: Rodney Dhavid Jimenez Chacin (rodhnin)_

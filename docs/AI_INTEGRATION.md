@@ -13,7 +13,7 @@ Both are generated from the JSON scan report using carefully crafted prompts and
 
 ---
 
-## 🧪 Testing AI Integration
+## Testing AI Integration
 
 ### Standalone Test Module
 
@@ -39,7 +39,7 @@ This test will:
 5. Generate sample technical remediation guide
 6. Report success/failure with diagnostics
 
-**Use this test to verify your AI setup is working before running production scans.**
+If no API key is configured, the scan completes successfully with AI skipped (exit 0, graceful degradation).
 
 ---
 
@@ -75,86 +75,113 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 # Ollama - No API key needed (local)
 ```
 
+You can also pass a custom environment variable name with `--api-key-env`:
+
+```bash
+# Use a different env var for the key
+python -m pyth --target http://example.com --use-ai --api-key-env MY_OPENAI_KEY
+```
+
 ---
 
 ## Configuration
 
-### ⚠️ IMPORTANT: Provider Switching (v0.1.0)
+### What can be configured from CLI vs YAML
 
-**Current Method:** Provider selection is configured in `config/default.yaml`.
+Pythia uses a layered configuration system. **CLI flags take the highest priority**, overriding the YAML files. However, **not everything has a CLI flag** — several settings can only be changed by editing the config file.
 
-**To switch providers, you must edit the YAML file directly:**
+**Configurable via CLI flags (per-scan overrides):**
 
-```yaml
-ai:
-    provider: "openai" # Change this to: openai, anthropic, or ollama
-    model: "gpt-4-turbo-preview" # Update model based on provider
-    temperature: 0.3
-    max_completion_tokens: 2000
+| Flag            | What it overrides                            |
+| --------------- | -------------------------------------------- |
+| `--ai-provider` | `ai.langchain.provider`                      |
+| `--ai-model`    | `ai.langchain.model`                         |
+| `--api-key-env` | `ai.api_key_env`                             |
+| `--ai-tone`     | Analysis tone (technical/non_technical/both) |
+| `--ai-budget`   | Max cost per scan in USD                     |
+| `--ai-stream`   | Enable streaming output                      |
+| `--ai-agent`    | Enable agent with NVD lookup                 |
+| `--ai-compare`  | Multi-provider comparison                    |
 
-    # For Ollama only - add this section:
-    ollama:
-        base_url: "http://localhost:11434"
+**Must be set in `config/default.yaml` (no CLI flag):**
+
+- **Ollama server URL** (`ai.langchain.ollama_base_url`) — if your Ollama is not at `localhost:11434`
+- **Temperature** (`ai.langchain.temperature`, default `0.3`) — controls AI output creativity
+- **Max tokens** (`ai.langchain.max_tokens`, default `2000`) — output length limit
+- **Proxy** (`advanced.proxy.http/https`) — if you route requests through a proxy
+- **Custom headers** (`advanced.custom_headers`) — global headers for all requests
+- **Consent token expiry** (`consent.token_expiry_hours`, default `48`)
+- **Detection thresholds** (`sqli.time_threshold`, `sqli.boolean_blind.*`) — tuning detection sensitivity
+- **Custom payloads** (`sqli.error_payloads`, `sqli.boolean_payloads`, `sqli.time_based_payloads`) — if you need to add or replace payloads
+- **HTML as default** (`reporting.format.html: true`) — generate HTML without `--html` flag every time
+
+### CLI Flags — Per-Scan Overrides
+
+For most use cases you only need CLI flags:
+
+```bash
+# Use Anthropic with a specific model
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-provider anthropic \
+  --ai-model claude-3-5-haiku-20241022 \
+  --ai-tone technical \
+  --html
+
+# Use OpenAI with GPT-4o
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-provider openai \
+  --ai-model gpt-4o \
+  --html
+
+# Use Ollama locally (default URL: http://localhost:11434)
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-provider ollama \
+  --ai-model llama3.2 \
+  --html
 ```
 
-### Provider-Specific Configuration
+### YAML Configuration — Persistent Defaults
+
+Edit `config/default.yaml` (project-wide) or `~/.pythia/config.yaml` (user-level, takes priority over project default) to change permanent defaults.
 
 #### OpenAI (Default)
 
 ```yaml
 ai:
-    provider: "openai"
-    model: "gpt-4-turbo-preview" # or gpt-4, gpt-3.5-turbo
-    temperature: 0.3
-    max_completion_tokens: 2000
-```
-
-Environment variable:
-
-```bash
-export OPENAI_API_KEY="sk-..."
+    langchain:
+        provider: "openai"
+        model: "gpt-4o-mini-2024-07-18" # Other options: gpt-4o, gpt-4-turbo
+        temperature: 0.3
+        max_tokens: 2000
 ```
 
 #### Anthropic Claude
 
 ```yaml
 ai:
-    provider: "anthropic"
-    model: "claude-3-5-sonnet-20241022" # or claude-3-opus, claude-3-haiku
-    temperature: 0.3
-    max_completion_tokens: 2000
+    langchain:
+        provider: "anthropic"
+        model: "claude-3-5-haiku-20241022" # or claude-3-5-sonnet-20241022
+        temperature: 0.3
+        max_tokens: 2000
 ```
 
-Environment variable:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-#### Ollama (Local)
+#### Ollama (Local) — Ollama URL requires YAML
 
 ```yaml
 ai:
-    provider: "ollama"
-    model: "llama3.2:latest" # or whatever model you have pulled
-    temperature: 0.3
-    max_completion_tokens: 2000
-    ollama:
-        base_url: "http://localhost:11434"
+    langchain:
+        provider: "ollama"
+        model: "llama3.2:latest"
+        temperature: 0.3
+        max_tokens: 2000
+        ollama_base_url: "http://localhost:11434" # Change if Ollama on different host/port
 ```
 
-No API key needed for Ollama - runs 100% locally!
-
-### Future Enhancement (v0.3.0)
-
-In version 0.3.0, we will implement an interactive configuration system:
-
--   Dynamic provider switching without editing YAML
--   Runtime model selection
--   Interactive configuration menu
--   Profile management for different scenarios
-
-For now, manual YAML editing is required for provider switching.
+> **Note:** The `ollama_base_url` has no CLI flag. If your Ollama server is not at `localhost:11434`, you **must** edit the YAML.
 
 ---
 
@@ -163,19 +190,13 @@ For now, manual YAML editing is required for provider switching.
 ### Basic AI Analysis
 
 ```bash
-# 1. Configure provider in config/default.yaml (see above)
-
-# 2. Verify domain consent (for aggressive mode)
-python -m pyth --gen-consent example.com
-python -m pyth --verify-consent http --domain example.com --token verify-abc123
-
-# 3. Run scan with AI
+# Run scan with AI analysis
 python -m pyth --target http://localhost:8081 --aggressive --use-ai --html
 
 # Different analysis tones
-python -m pyth --target http://localhost:8081 --aggressive --use-ai --ai-tone technical
-python -m pyth --target http://localhost:8081 --aggressive --use-ai --ai-tone non_technical
-python -m pyth --target http://localhost:8081 --aggressive --use-ai --ai-tone both
+python -m pyth --target http://localhost:8081 --use-ai --ai-tone technical
+python -m pyth --target http://localhost:8081 --use-ai --ai-tone non_technical
+python -m pyth --target http://localhost:8081 --use-ai --ai-tone both
 ```
 
 ### Analysis Tone Options
@@ -186,32 +207,101 @@ python -m pyth --target http://localhost:8081 --aggressive --use-ai --ai-tone bo
 | `non_technical` | Executives, Managers, Business Owners | Business impact, compliance, financial risks  |
 | `both`          | Complete team                         | Both technical and executive summaries        |
 
+### AI Streaming (`--ai-stream`)
+
+Stream output token by token as the AI generates the analysis:
+
+```bash
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-stream \
+  --ai-tone technical \
+  --html
+```
+
+Output prints progressively to the terminal as tokens arrive.
+
+### AI Agent Mode (`--ai-agent`)
+
+Agent mode enables the AI to perform autonomous CVE lookup via the NVD API:
+
+```bash
+python -m pyth --target http://localhost:8081 \
+  --aggressive \
+  --use-ai \
+  --ai-agent \
+  --html
+```
+
+The agent:
+
+- Detects the DBMS version from error messages
+- Queries NVD for CVEs matching that DBMS version + `cweId=CWE-89`
+- Enriches each finding with real CVE IDs, CVSS scores, and NVD links
+- Iteratively refines its analysis for deeper coverage
+
+NVD API endpoint used: `https://services.nvd.nist.gov/rest/json/cves/2.0`
+
+### Multi-Provider Comparison (`--ai-compare`)
+
+Run analysis with multiple providers in parallel and include all results in the report:
+
+```bash
+# Compare providers (use default models)
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-compare "openai,anthropic" \
+  --html
+
+# Compare with specific models
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-compare "openai:gpt-4o-mini,anthropic:claude-3-5-haiku-20241022" \
+  --html
+```
+
+Results from all providers appear in separate tabs in the HTML report.
+
+### Budget Control (`--ai-budget`)
+
+Cap AI spending per scan:
+
+```bash
+# Stop AI analysis if cost exceeds $0.10
+python -m pyth --target http://localhost:8081 \
+  --use-ai \
+  --ai-budget 0.10 \
+  --html
+```
+
+Costs are tracked in `~/.argos/costs.json` (shared across the Argos Suite). Each entry includes tool, provider, model, tokens used, cost in USD, and scan ID.
+
 ---
 
 ## Privacy & Security
 
 ### Data Sanitization
 
-Before sending reports to AI, Pythia automatically removes sensitive information. The sanitization system is continuously improving based on real-world testing.
+Before sending reports to AI, Pythia automatically removes sensitive information.
 
 **What Gets Removed:**
 
--   ✅ Consent tokens (`verify-abc123...`)
--   ✅ Bearer tokens and API keys
--   ✅ Database credentials in error messages
--   ✅ Session IDs and cookies
--   ✅ Long SQL queries (truncated to 500 chars)
--   ✅ Database schema details in evidence
--   ✅ Internal IP addresses and hostnames
+- Consent tokens (`verify-abc123...`)
+- Bearer tokens and API keys
+- Database credentials in error messages
+- Session IDs and cookies
+- Long SQL queries (truncated to 500 chars)
+- Database schema details in evidence
+- Internal IP addresses and hostnames
 
 **What Gets Sent (Sanitized):**
 
--   Finding IDs and titles (PYTHIA-SQL-001, etc.)
--   Severity levels (critical, high, medium, low)
--   Detection methods (error-based, blind, time-based)
--   Redacted/truncated evidence
--   Generic recommendations
--   External reference URLs (OWASP, CWE)
+- Finding IDs and titles (PYTHIA-SQL-001, etc.)
+- Severity levels (critical, high, medium, low)
+- Detection methods (error-based, blind, time-based)
+- Redacted/truncated evidence
+- Generic recommendations
+- External reference URLs (OWASP, CWE)
 
 ### Privacy Recommendations
 
@@ -219,29 +309,27 @@ Before sending reports to AI, Pythia automatically removes sensitive information
 | -------------------- | -------------------- | ----------------------------------------------- |
 | **High Privacy**     | Ollama (local)       | Data never leaves your machine                  |
 | **Moderate Privacy** | Anthropic Claude     | Strong privacy policy, no training on user data |
-| **Standard**         | OpenAI GPT-4         | Best analysis quality, standard privacy         |
-
-⚠️ **Note on Ollama:** While 100% private, local models may generate less accurate analysis for complex SQL injection reports. Best for sensitive environments where privacy is paramount.
+| **Standard**         | OpenAI               | Best analysis quality, standard privacy         |
 
 ---
 
 ## Providers Comparison
 
-### OpenAI GPT-4 (Default)
+### OpenAI (Default)
 
 **Pros:**
 
--   Best analysis quality for SQL injection
--   Extensive database security knowledge
--   Fast response (20-30s)
--   Handles complex blind SQLi scenarios well
--   Accurate OWASP/CWE references
+- Best analysis quality for SQL injection
+- Extensive database security knowledge
+- Fast response
+- Handles complex blind SQLi scenarios well
+- Accurate OWASP/CWE references
 
 **Cons:**
 
--   Requires internet
--   Costs money (~$0.10-0.30/scan)
--   Data sent to OpenAI servers
+- Requires internet
+- Costs money (~$0.10-0.30/scan depending on model)
+- Data sent to OpenAI servers
 
 **Best For:** Production reports, client deliverables, complex SQL injection chains
 
@@ -249,17 +337,16 @@ Before sending reports to AI, Pythia automatically removes sensitive information
 
 **Pros:**
 
--   Strong technical reasoning for database attacks
--   Excellent code remediation examples
--   Privacy-focused company
--   Good with prepared statement conversions
--   Competitive pricing
+- Strong technical reasoning for database attacks
+- Excellent code remediation examples
+- Privacy-focused company
+- Good with prepared statement conversions
 
 **Cons:**
 
--   Requires internet
--   Costs money (~$0.15-0.45/scan)
--   Slightly slower than GPT-4
+- Requires internet
+- Costs money
+- Slightly slower than GPT-4o
 
 **Best For:** Technical deep-dives, code remediation guides, EU clients (GDPR)
 
@@ -267,30 +354,27 @@ Before sending reports to AI, Pythia automatically removes sensitive information
 
 **Pros:**
 
--   100% offline operation
--   Complete privacy (no data leaves machine)
--   Free (no API costs)
--   No internet required
--   Perfect for air-gapped environments
+- 100% offline operation
+- Complete privacy (no data leaves machine)
+- Free (no API costs)
+- Perfect for air-gapped environments
 
 **Cons:**
 
--   Lower quality analysis
--   Very slow without GPU (10-30 minutes)
--   May struggle with complex blind SQLi reports
--   Limited knowledge of latest OWASP guidelines
--   Requires local setup
+- Lower quality analysis
+- Very slow without GPU (10-30 minutes)
+- May struggle with complex blind SQLi reports
 
-**Best For:** Sensitive environments, air-gapped networks, internal testing, learning
+**Best For:** Sensitive environments, air-gapped networks, internal testing
 
 ### Performance Comparison
 
-| Provider         | Executive Summary | Technical Guide | Total Time | Quality    |
-| ---------------- | ----------------- | --------------- | ---------- | ---------- |
-| OpenAI GPT-4     | ~15s              | ~20s            | ~35s       | ⭐⭐⭐⭐⭐ |
-| Anthropic Claude | ~20s              | ~25s            | ~45s       | ⭐⭐⭐⭐⭐ |
-| Ollama (CPU)     | ~14min            | ~14min          | ~28min     | ⭐⭐⭐     |
-| Ollama (GPU)     | ~30s              | ~45s            | ~75s       | ⭐⭐⭐     |
+| Provider         | Executive Summary | Technical Guide | Total Time | Quality |
+| ---------------- | ----------------- | --------------- | ---------- | ------- |
+| OpenAI GPT-4o    | ~15s              | ~20s            | ~35s       | ★★★★★   |
+| Anthropic Claude | ~20s              | ~25s            | ~45s       | ★★★★★   |
+| Ollama (CPU)     | ~14min            | ~14min          | ~28min     | ★★★     |
+| Ollama (GPU)     | ~30s              | ~45s            | ~75s       | ★★★     |
 
 _Tested with 14 findings (10 critical, 3 high, 1 medium)_
 
@@ -310,42 +394,28 @@ ollama serve &
 # 3. Pull a model (llama3.2 recommended for balance)
 ollama pull llama3.2
 
-# Alternative models for SQL injection analysis:
-ollama pull codellama    # Better for code examples
-ollama pull mistral      # Good balance of speed/quality
-ollama pull phi3         # Fastest, smallest (2.2GB)
-
 # 4. Verify it's working
 ollama list
 curl http://localhost:11434/api/tags
 
-# 5. Update config/default.yaml
-ai:
-  provider: "ollama"
-  model: "llama3.2:latest"
-  ollama:
-    base_url: "http://localhost:11434"
-
-# 6. Test the integration
-python -m pyth.core.ai ollama
-
-# 7. Run a scan with AI
+# 5. Run scan with local AI
 python -m pyth \
   --target http://localhost:8081 \
-  --aggressive \
   --use-ai \
-  --ai-tone both \
+  --ai-provider ollama \
+  --ai-model llama3.2 \
+  --ai-tone technical \
   --html
 ```
 
 **Recommended Models for SQL Injection Analysis:**
 
-| Model       | Size  | Speed  | Quality  | Best For                         |
-| ----------- | ----- | ------ | -------- | -------------------------------- |
-| `llama3.2`  | 3.9GB | Medium | ⭐⭐⭐⭐ | General SQLi analysis            |
-| `codellama` | 3.8GB | Medium | ⭐⭐⭐⭐ | Code remediation examples        |
-| `mistral`   | 4.1GB | Medium | ⭐⭐⭐   | Technical explanations           |
-| `phi3`      | 2.2GB | Fast   | ⭐⭐⭐   | Quick analysis, resource-limited |
+| Model       | Size  | Speed  | Quality | Best For                         |
+| ----------- | ----- | ------ | ------- | -------------------------------- |
+| `llama3.2`  | 3.9GB | Medium | ★★★★    | General SQLi analysis            |
+| `codellama` | 3.8GB | Medium | ★★★★    | Code remediation examples        |
+| `mistral`   | 4.1GB | Medium | ★★★     | Technical explanations           |
+| `phi3`      | 2.2GB | Fast   | ★★★     | Quick analysis, resource-limited |
 
 ---
 
@@ -355,23 +425,66 @@ Prompts are stored in `config/prompts/`:
 
 ### Technical Prompt (`technical.txt`)
 
--   Step-by-step SQL injection remediation
--   Prepared statement examples (PHP, Python, Node.js, Java)
--   Input validation techniques
--   WAF configuration snippets
--   Database hardening recommendations
--   Verification methods (manual testing, automated tools)
+- Step-by-step SQL injection remediation
+- Prepared statement examples (PHP/PDO, Python/SQLAlchemy, Node.js/pg, Java/PreparedStatement)
+- Input validation techniques
+- WAF configuration snippets
+- Database hardening recommendations
+- Verification methods
 
 ### Non-Technical Prompt (`non_technical.txt`)
 
--   Business impact of SQL injection
--   Data breach risk assessment
--   Compliance implications (GDPR, PCI-DSS, HIPAA)
--   Financial impact estimates
--   Board-level recommendations
--   Timeline for remediation
+- Business impact of SQL injection
+- Data breach risk assessment
+- Compliance implications (GDPR, PCI-DSS, HIPAA)
+- Financial impact estimates
+- Board-level recommendations
+- Timeline for remediation
 
 Edit these files to customize AI output for your organization's needs.
+
+---
+
+## Cost Management
+
+### Token Usage Estimates (SQL Injection Reports)
+
+| Report Size          | Input Tokens | Output Tokens | OpenAI Cost (gpt-4o-mini) | Anthropic Cost |
+| -------------------- | ------------ | ------------- | ------------------------- | -------------- |
+| Small (5 findings)   | ~1,200       | ~800          | ~$0.01                    | ~$0.06         |
+| Medium (14 findings) | ~2,500       | ~1,500        | ~$0.02                    | ~$0.18         |
+| Large (30+ findings) | ~5,000       | ~3,000        | ~$0.05                    | ~$0.35         |
+
+_Costs vary by model. Use `--ai-budget` to cap per-scan spend._
+
+### Cost Reduction Tips
+
+1. **Use single tone instead of `both`:** reduces tokens by ~50%
+2. **Use `gpt-4o-mini` (default):** significantly cheaper than GPT-4o for most analyses
+3. **Reduce scan scope:** `--max-pages 10` for focused testing
+4. **Use Ollama for internal/dev testing:** free, unlimited
+5. **Use `--ai-budget 0.05`** to prevent runaway costs during CI/CD
+
+### Cost Tracking
+
+All AI costs are saved to `~/.argos/costs.json` (shared Argos Suite file):
+
+```json
+{
+    "entries": [
+        {
+            "tool": "pythia",
+            "provider": "openai",
+            "model": "gpt-4o-mini-2024-07-18",
+            "input_tokens": 2500,
+            "output_tokens": 1500,
+            "cost_usd": 0.02,
+            "scan_id": 42,
+            "created_at": "2026-03-18T14:30:00Z"
+        }
+    ]
+}
+```
 
 ---
 
@@ -385,156 +498,73 @@ Run the standalone test:
 python -m pyth.core.ai [provider_name]
 ```
 
-This will tell you exactly what's wrong.
-
 ### Common Issues
 
 #### "API key not found"
 
--   Check environment variable is set
--   For OpenAI: `echo $OPENAI_API_KEY`
--   For Anthropic: `echo $ANTHROPIC_API_KEY`
--   Restart your terminal after setting env vars
+- Check environment variable is set: `echo $OPENAI_API_KEY`
+- Restart your terminal after setting env vars
+- Use `--api-key-env` to specify a custom env var name
 
 #### "Ollama server not responding"
 
--   Start server: `ollama serve`
--   Check it's running: `ps aux | grep ollama`
--   Verify port: `curl http://localhost:11434/api/tags`
--   Check firewall: `sudo ufw allow 11434`
+- Start server: `ollama serve`
+- Verify port: `curl http://localhost:11434/api/tags`
 
 #### "Model not found" (Ollama)
 
--   Pull the model: `ollama pull llama3.2`
--   List available models: `ollama list`
--   Update `config/default.yaml` with correct model name
--   Check model spelling (case-sensitive)
+- Pull the model: `ollama pull llama3.2`
+- List available models: `ollama list`
+- Pass the model name with `--ai-model llama3.2`
 
 #### "Rate limit exceeded" (OpenAI/Anthropic)
 
--   Reduce `max_completion_tokens` in config
--   Wait and retry (OpenAI: 3 req/min on free tier)
--   Use `--ai-tone technical` (smaller output than `both`)
--   Upgrade API plan for higher limits
+- Use `--ai-tone technical` (smaller output than `both`)
+- Upgrade API plan for higher limits
 
-#### "AI analysis failed"
+#### "AI analysis failed / scan completed without AI"
 
-1. Run standalone test: `python -m pyth.core.ai [provider]`
-2. Check provider configuration in `config/default.yaml`
-3. Verify API keys/connectivity
-4. Try with a simpler report (use `--max-pages 5`)
-5. Check logs: `~/.pythia/logs/pythia.log`
-
-#### "Connection timeout" (Ollama)
-
--   Increase timeout in config if using CPU-only Ollama
--   Model may be too large for available RAM
--   Try smaller model: `ollama pull phi3`
-
----
-
-## Cost Management
-
-### Token Usage Estimates (SQL Injection Reports)
-
-| Report Size          | Input Tokens | Output Tokens | OpenAI Cost | Anthropic Cost |
-| -------------------- | ------------ | ------------- | ----------- | -------------- |
-| Small (5 findings)   | ~1,200       | ~800          | ~$0.04      | ~$0.06         |
-| Medium (14 findings) | ~2,500       | ~1,500        | ~$0.12      | ~$0.18         |
-| Large (30+ findings) | ~5,000       | ~3,000        | ~$0.25      | ~$0.35         |
-
-_Costs based on GPT-4-turbo ($0.01/1K input, $0.03/1K output)_
-
-### Cost Reduction Tips
-
-1. **Use single tone instead of `both`:**
-
-    - `--ai-tone technical` → 50% cheaper
-    - `--ai-tone non_technical` → 50% cheaper
-
-2. **Reduce scan scope:**
-
-    - Use `--max-pages 10` for focused testing
-    - Test specific endpoints instead of full crawl
-
-3. **Use cheaper models for testing:**
-
-    - GPT-3.5-turbo: ~70% cheaper than GPT-4
-    - Claude Haiku: ~80% cheaper than Claude Opus
-
-4. **Batch scans without AI, generate reports later:**
-
-    - Run multiple scans without `--use-ai`
-    - Process reports offline with local Ollama
-
-5. **Use Ollama for internal/dev testing:**
-    - Free, unlimited
-    - Save OpenAI/Anthropic for client deliverables
+- This is graceful degradation — scan data is still saved
+- Run standalone test: `python -m pyth.core.ai [provider]`
+- Check logs: `~/.argos/logs/pythia.log`
 
 ---
 
 ## Best Practices
 
-### 1. Choose Right Provider for Context
+### Choose Right Provider for Context
 
-| Scenario                  | Recommended Provider | Reason                      |
-| ------------------------- | -------------------- | --------------------------- |
-| Client reports            | OpenAI GPT-4         | Best quality, professional  |
-| Internal testing          | Ollama               | Free, private               |
-| Quick triage              | GPT-3.5-turbo        | Fast & cheap                |
-| Sensitive environments    | Ollama               | 100% offline                |
-| EU/GDPR clients           | Anthropic            | Privacy-focused, GDPR-aware |
-| Financial sector          | Ollama               | Air-gapped compliance       |
-| Code remediation examples | Anthropic/CodeLlama  | Best code generation        |
+| Scenario                  | Recommended Provider | Reason                          |
+| ------------------------- | -------------------- | ------------------------------- |
+| Client reports            | OpenAI gpt-4o        | Best quality, professional      |
+| Internal testing          | Ollama               | Free, private                   |
+| Quick triage              | OpenAI gpt-4o-mini   | Fast & cheap (default)          |
+| Sensitive environments    | Ollama               | 100% offline                    |
+| EU/GDPR clients           | Anthropic            | Privacy-focused, GDPR-aware     |
+| Financial sector          | Ollama               | Air-gapped compliance           |
+| Code remediation examples | Anthropic/CodeLlama  | Best code generation            |
+| CVE enrichment            | Any + `--ai-agent`   | NVD lookup is provider-agnostic |
 
-### 2. Review AI Output
+### Review AI Output
 
 **Always verify:**
 
--   Prepared statement syntax is correct for your language/framework
--   Database-specific functions are accurate (MySQL vs PostgreSQL)
--   OWASP references are up-to-date
--   No hallucinated CVE numbers
--   Remediation steps match your tech stack
--   Input validation examples are complete
+- Prepared statement syntax is correct for your language/framework
+- Database-specific functions are accurate (MySQL vs PostgreSQL)
+- OWASP references are up-to-date
+- CVE numbers from `--ai-agent` mode are real (check NVD link in report)
+- Remediation steps match your tech stack
 
-### 3. Optimize for Your Use Case
-
-**Production (Client Reports):**
-
--   Provider: OpenAI GPT-4
--   Tone: `both`
--   Quality: Maximum
--   Cost: ~$0.25/scan
-
-**Development (Internal Testing):**
-
--   Provider: Ollama (llama3.2)
--   Tone: `technical`
--   Quality: Good enough
--   Cost: Free
-
-**Budget-Conscious:**
-
--   Provider: GPT-3.5-turbo
--   Tone: `technical` OR `non_technical` (not both)
--   Quality: Acceptable
--   Cost: ~$0.05/scan
-
-### 4. Pre-Scan Testing
-
-Before running expensive AI analysis:
+### Pre-Scan Testing
 
 ```bash
 # 1. Test provider is working
 python -m pyth.core.ai openai
 
-# 2. Run scan WITHOUT AI first
+# 2. Run scan WITHOUT AI first to validate findings
 python -m pyth --target http://localhost:8081 --aggressive --html
 
-# 3. Review findings manually
-
-# 4. If report looks good, re-run with AI
+# 3. If report looks good, re-run with AI
 python -m pyth --target http://localhost:8081 --aggressive --use-ai --html
 ```
 
@@ -542,198 +572,71 @@ python -m pyth --target http://localhost:8081 --aggressive --use-ai --html
 
 ## Examples
 
-### Full Workflow with Provider Testing
+### Full Workflow: Authenticated Scan with AI
 
 ```bash
-# 1. Test all providers to see which works best
-python -m pyth.core.ai openai    # Test OpenAI
-python -m pyth.core.ai anthropic # Test Anthropic
-python -m pyth.core.ai ollama    # Test Ollama (if installed)
+# 1. Generate consent token
+python -m pyth --gen-consent myapp.com
 
-# 2. Choose provider and update config/default.yaml
-vim config/default.yaml
-# Set: provider: "anthropic"
-
-# 3. Generate consent token (for aggressive mode)
-python -m pyth --gen-consent myapp.local
-
-# Output:
-# ✅ Consent token generated: verify-abc123def456...
-
-# 4. Verify ownership (place token at /.well-known/security.txt)
+# 2. Verify ownership
 python -m pyth --verify-consent http \
-  --domain myapp.local \
+  --domain myapp.com \
   --token verify-abc123def456
 
-# 5. Run aggressive scan with AI analysis
+# 3. Run authenticated aggressive scan with AI agent
 python -m pyth \
-  --target http://myapp.local:8081 \
+  --target https://myapp.com/api/v1 \
   --aggressive \
+  --auth-header "Authorization: Bearer eyJhbGc..." \
+  --auth-header "X-API-Key: sk-prod-xxx" \
   --use-ai \
+  --ai-agent \
   --ai-tone both \
   --html \
-  --rate 40 \
   -vv
 
-# 6. Check reports
+# 4. Check reports
 ls -lh ~/.pythia/reports/
-open ~/.pythia/reports/pythia_sqli_report_myapp.local_*.html
 ```
 
-### Quick Development Test (No AI Cost)
+### CI/CD Integration with AI Budget
 
 ```bash
-# 1. Setup Ollama (one-time)
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve &
-ollama pull llama3.2
+# Run scan, cap AI cost at $0.05, fail pipeline on high+ findings
+python -m pyth \
+  --target https://staging.myapp.com \
+  --aggressive \
+  --use-ai \
+  --ai-budget 0.05 \
+  --fail-on high \
+  --sarif > results.sarif
 
-# 2. Update config to use Ollama
-vim config/default.yaml
-# Set: provider: "ollama", model: "llama3.2:latest"
+echo "Exit code: $?"
+# Exit 0 = clean, Exit 10 = findings found, Exit 1 = error
+```
 
-# 3. Run scan with free AI analysis
+### Compare Two AI Providers
+
+```bash
 python -m pyth \
   --target http://localhost:8081 \
-  --safe \
-  --use-ai \
-  --ai-tone technical \
-  --html
-
-# 4. AI runs locally, no API costs!
-```
-
-### Production Client Report
-
-```bash
-# Use best quality AI for client deliverable
-python -m pyth \
-  --target https://client-app.com \
   --aggressive \
   --use-ai \
-  --ai-tone both \
-  --html \
-  --max-pages 50 \
-  --rate 10 \
-  -vv
-
-# Generate comprehensive report with:
-# - Executive summary for C-suite
-# - Technical remediation for dev team
-# - Both in single HTML file
-```
-
----
-
-## Report Examples
-
-### With AI Analysis (Technical Tone)
-
-```
-PYTHIA SQL INJECTION REPORT
-============================
-Target: http://localhost:8081
-Date: 2025-11-03
-Findings: 14 (10 critical, 3 high, 1 medium)
-
-[AI TECHNICAL REMEDIATION GUIDE]
-================================
-
-1. EXECUTIVE SUMMARY
---------------------
-The application has multiple critical SQL injection vulnerabilities
-in URL parameters and form fields. Immediate remediation required.
-
-2. CRITICAL FINDINGS
---------------------
-Finding: Error-Based SQL Injection (PYTHIA-SQL-001)
-Affected: GET parameter 'id' in /user endpoint
-
-Risk: Attackers can extract database contents through error messages.
-
-Remediation Steps:
-1. Replace concatenated SQL with prepared statements:
-
-❌ VULNERABLE CODE (PHP):
-$sql = "SELECT * FROM users WHERE id = " . $_GET['id'];
-
-✅ SECURE CODE (PHP PDO):
-$stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id");
-$stmt->execute(['id' => $_GET['id']]);
-
-2. Disable verbose error messages in production
-3. Implement input validation (whitelist allowed IDs)
-
-Verification:
-- Test with payload: ?id=1' OR '1'='1
-- Should NOT return all records
-...
-
-[Full technical guide with code examples]
-```
-
-### With AI Analysis (Non-Technical Tone)
-
-```
-[AI EXECUTIVE SUMMARY]
-======================
-
-1. EXECUTIVE OVERVIEW
----------------------
-Your application has 10 CRITICAL security vulnerabilities that allow
-attackers to steal customer data, bypass authentication, and
-potentially delete your entire database.
-
-BUSINESS RISK: High
-ACTION REQUIRED: Immediate (within 24 hours)
-
-2. WHAT IS SQL INJECTION?
---------------------------
-SQL injection is like leaving your database's master key in the front
-door. Attackers can trick your application into revealing customer
-records, financial data, or administrative passwords.
-
-Real-World Example: The Equifax breach (2017) exposed 147 million
-records due to SQL injection, costing $700M+ in settlements.
-
-3. BUSINESS IMPACT
-------------------
-Data Breach Risk:
-- 500,000+ customer records at risk
-- Average breach cost: $4.45 million (IBM Security Report)
-- GDPR fines: Up to €20M or 4% annual revenue
-
-Financial Impact:
-- Incident response: $50,000-$200,000
-- Legal fees & settlements: $500,000+
-- Lost customers: 30% churn average
-- Cyber insurance premium increase: 50-100%
-
-4. RECOMMENDED ACTIONS
-----------------------
-IMMEDIATE (This Week):
-- Hire external security firm
-- Deploy Web Application Firewall (WAF)
-- Begin emergency code fixes
-
-SHORT-TERM (This Month):
-- Train development team ($20K)
-- Implement code review process
-- Deploy automated security testing
-
-[Full executive summary with business context]
+  --ai-compare "openai:gpt-4o-mini,anthropic:claude-3-5-haiku-20241022" \
+  --html
 ```
 
 ---
 
 ## Support
 
--   📖 [LangChain v1.0 Docs](https://python.langchain.com/docs/)
--   🤖 [OpenAI Platform](https://platform.openai.com/)
--   🔍 [Anthropic Claude](https://docs.anthropic.com/)
--   🦙 [Ollama](https://ollama.com/)
+- [LangChain v1.0 Docs](https://python.langchain.com/docs/)
+- [OpenAI Platform](https://platform.openai.com/)
+- [Anthropic Claude](https://docs.anthropic.com/)
+- [Ollama](https://ollama.com/)
+- [NVD API](https://nvd.nist.gov/developers/vulnerabilities)
 
 For Pythia AI issues:
 
--   GitHub: https://github.com/rodhnin/pythia-sql-clairvoyance/issues
--   Website: https://rodhnin.com
+- GitHub: https://github.com/rodhnin/pythia-sql-clairvoyance/issues
+- Website: https://rodhnin.com

@@ -76,6 +76,17 @@ def create_parser() -> argparse.ArgumentParser:
         help='Cookie header for authenticated scans (format: "name1=value1; name2=value2")'
     )
     auth_group.add_argument(
+        '--auth-header',
+        action='append',
+        metavar='HEADER',
+        dest='auth_headers',
+        help=(
+            'Custom auth header for authenticated scans. '
+            'Format: "Authorization: Bearer eyJhbGc..." or "X-API-Key: sk-xxx". '
+            'Can be passed multiple times.'
+        )
+    )
+    auth_group.add_argument(
         '--auto-csrf',
         action='store_true',
         help='Automatically extract and use CSRF tokens from forms'
@@ -100,6 +111,18 @@ def create_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Ignore robots.txt (not recommended)'
     )
+    crawler_group.add_argument(
+        '--no-crawl',
+        action='store_true',
+        help='Skip web crawling — test only the exact URL provided (no BFS, no sitemap discovery). '
+             'Use when targeting a specific endpoint directly.'
+    )
+    crawler_group.add_argument(
+        '--js',
+        action='store_true',
+        help='Enable JavaScript rendering via Playwright for SPA/JS-heavy targets '
+             '(requires: pip install pyth[js])'
+    )
     
     # Output options
     output_group = parser.add_argument_group('Output Options')
@@ -119,6 +142,32 @@ def create_parser() -> argparse.ArgumentParser:
         type=Path,
         metavar='PATH',
         help='SQLite database path (default: ~/.argos/argos.db)'
+    )
+    output_group.add_argument(
+        '--diff',
+        metavar='SCAN_ID',
+        help=(
+            'Compare this scan against a previous scan ID (use "last" for most recent). '
+            'Adds a diff section to the report showing new, fixed, and persisting findings.'
+        )
+    )
+    output_group.add_argument(
+        '--sarif',
+        action='store_true',
+        help='Output SARIF format to stdout (for GitHub Security tab, GitLab SAST)'
+    )
+
+    # CI/CD options
+    cicd_group = parser.add_argument_group('CI/CD Integration')
+    cicd_group.add_argument(
+        '--fail-on',
+        choices=['critical', 'high', 'medium', 'low'],
+        metavar='SEVERITY',
+        help=(
+            'Exit with code 10 if any finding at this severity or higher is found. '
+            'Exit code 0 = no findings at threshold. '
+            'Example: --fail-on high (exit 10 if critical or high findings found)'
+        )
     )
     
     # Verbosity options
@@ -170,6 +219,46 @@ def create_parser() -> argparse.ArgumentParser:
         default='OPENAI_API_KEY',
         metavar='VAR',
         help='Environment variable for AI API key [default: OPENAI_API_KEY]'
+    )
+    ai_group.add_argument(
+        '--ai-provider',
+        choices=['openai', 'anthropic', 'ollama'],
+        metavar='PROVIDER',
+        help='AI provider override: openai, anthropic, or ollama'
+    )
+    ai_group.add_argument(
+        '--ai-model',
+        type=str,
+        metavar='MODEL',
+        help='AI model override (e.g. gpt-4o-mini-2024-07-18, claude-3-5-haiku-20241022)'
+    )
+    ai_group.add_argument(
+        '--ai-stream',
+        action='store_true',
+        help='Stream AI output token-by-token in real time'
+    )
+    ai_group.add_argument(
+        '--ai-compare',
+        type=str,
+        metavar='PROVIDERS',
+        help=(
+            'Run analysis through multiple AI providers in parallel and compare results. '
+            'Format: openai,anthropic or openai:gpt-4o-mini,anthropic:claude-3-5-haiku-20241022'
+        )
+    )
+    ai_group.add_argument(
+        '--ai-agent',
+        action='store_true',
+        help=(
+            'Use AI agent mode with live NVD CVE lookup by CWE-89 + detected DBMS. '
+            'API — no extra keys needed.'
+        )
+    )
+    ai_group.add_argument(
+        '--ai-budget',
+        type=float,
+        metavar='USD',
+        help='Maximum AI cost per scan in USD (enables budget tracking, e.g. 0.50)'
     )
     
     # Consent token options
@@ -235,7 +324,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--version',
         action='version',
-        version='%(prog)s 0.1.0'
+        version='%(prog)s 0.2.0'
     )
     
     return parser
@@ -305,92 +394,179 @@ def handle_verify_consent(args, config: Config):
         return 1
 
 
+def _parse_compare_providers(compare_str: str) -> list:
+    """
+    Parse --ai-compare string into list of {provider, model} dicts.
+
+    Formats supported:
+      openai,anthropic
+      openai:gpt-4o-mini,anthropic:claude-3-5-haiku-20241022
+    """
+    providers = []
+    defaults = {
+        'openai':    'gpt-4o-mini-2024-07-18',
+        'anthropic': 'claude-3-5-haiku-20241022',
+        'ollama':    'llama3.2',
+    }
+    for part in compare_str.split(','):
+        part = part.strip()
+        if ':' in part:
+            prov, model = part.split(':', 1)
+            providers.append({'provider': prov.strip(), 'model': model.strip()})
+        else:
+            providers.append({'provider': part, 'model': defaults.get(part, part)})
+    return providers
+
+
+def _check_fail_on(result: dict, fail_on: str) -> bool:
+    """
+    Return True if findings exceed the --fail-on threshold.
+
+    Severity order: critical > high > medium > low
+    """
+    severity_order = ['critical', 'high', 'medium', 'low']
+    threshold_idx  = severity_order.index(fail_on)
+    summary        = result.get('summary', {})
+
+    for sev in severity_order[:threshold_idx + 1]:
+        if summary.get(sev, 0) > 0:
+            return True
+    return False
+
+
 def handle_scan(args, config: Config):
     """Handle main scan operation."""
     if not args.target:
         logger.error("--target is required for scanning")
         return 1
-    
+
     # Determine scan mode
-    if args.aggressive:
-        mode = 'aggressive'
-    else:
-        mode = 'safe'
-    
-    # Log cookie usage
+    mode = 'aggressive' if args.aggressive else 'safe'
+
     if args.cookie:
         logger.info("Using provided cookies for authenticated scan")
-    
-    # Log CSRF auto-extraction
+
+    auth_headers = getattr(args, 'auth_headers', None) or []
+    if auth_headers:
+        logger.info(f"Using {len(auth_headers)} custom auth header(s)")
+
     if args.auto_csrf:
         logger.info("CSRF token auto-extraction enabled")
-    
-    # Import scanner
+
+    # Parse --ai-compare providers
+    compare_providers = None
+    if getattr(args, 'ai_compare', None):
+        compare_providers = _parse_compare_providers(args.ai_compare)
+        logger.info(f"AI compare mode: {[p['provider'] for p in compare_providers]}")
+
+    use_agent = getattr(args, 'ai_agent', False)
+    diff_ref  = getattr(args, 'diff', None)
+    fail_on   = getattr(args, 'fail_on', None)
+    use_sarif = getattr(args, 'sarif', False)
+
+    # When --sarif active: redirect all logging handlers from stdout → stderr
+    # so the SARIF JSON on stdout stays clean and parseable by CI/CD tools.
+    if use_sarif:
+        import logging as _logging
+        import sys as _sys2
+        for _handler in _logging.root.handlers:
+            if isinstance(_handler, _logging.StreamHandler) and _handler.stream is _sys2.stdout:
+                _handler.stream = _sys2.stderr
+
     from .scanner import SQLInjectionScanner
-    
+
     try:
         scanner = SQLInjectionScanner(
             config=config,
             cookie_string=args.cookie,
+            auth_headers=auth_headers if auth_headers else None,
             auto_csrf=args.auto_csrf
         )
-        
-        # Run scan (scanner will check consent with proper messages)
+
         result = scanner.scan(
             target=args.target,
             mode=mode,
             use_ai=args.use_ai,
-            ai_tone=args.ai_tone if args.use_ai else None
+            ai_tone=args.ai_tone if args.use_ai else None,
+            compare_providers=compare_providers,
+            use_agent=use_agent,
+            diff_ref=diff_ref,
+            sarif=use_sarif,
         )
-        
-        # Check scan status and return appropriate exit code
+
         if result['status'] == 'failed':
-            # Scan failed (connection error, etc.)
             logger.error(f"Scan failed: {result.get('error', 'Unknown error')}")
             print("\n" + "="*70)
-            print(f"❌ SCAN FAILED: {result.get('error', 'Unknown error')}")
+            print(f"SCAN FAILED: {result.get('error', 'Unknown error')}")
             print("="*70)
             print(f"Target: {args.target}")
             print(f"Error: {result.get('error_message', 'No details available')}")
             print(f"Duration: {result.get('duration', 0):.2f}s")
             print("="*70 + "\n")
-            return 1  # Exit code 1 = failed
-        
+            return 1
+
         elif result['status'] == 'aborted':
-            # Scan aborted (requirements not met)
             logger.warning("Scan aborted: Target requirements not met")
             print("\n" + "="*70)
-            print("⚠️  SCAN ABORTED")
+            print("SCAN ABORTED")
             print("="*70)
             print(f"Target: {args.target}")
             print(f"Reason: {result.get('reason', 'Unknown')}")
             print(f"Duration: {result.get('duration', 0):.2f}s")
             print("="*70 + "\n")
-            return 2  # Exit code 2 = aborted
-        
-        else:  # status == 'completed'
-            # Scan completed successfully
-            print("\n" + "="*70)
-            print("✓ SCAN COMPLETE")
-            print("="*70)
-            print(f"Status: {result['status']}")
-            print(f"Findings: {result['findings_count']}")
-            print(f"Duration: {result['duration']:.2f}s")
-            print(f"\nReports generated:")
-            print(f"  JSON: {result['report_json']}")
+            return 2
+
+        else:  # completed
+            # When --sarif is active, SARIF JSON goes to stdout — redirect human output to stderr
+            import sys as _sys
+            _out = _sys.stderr if use_sarif else _sys.stdout
+
+            print("\n" + "="*70, file=_out)
+            print("SCAN COMPLETE", file=_out)
+            print("="*70, file=_out)
+            print(f"Status:   {result['status']}", file=_out)
+            print(f"Findings: {result['findings_count']}", file=_out)
+            print(f"Duration: {result['duration']:.2f}s", file=_out)
+
+            summary = result.get('summary', {})
+            if any(summary.get(s, 0) > 0 for s in ['critical', 'high', 'medium', 'low', 'info']):
+                print(f"  Critical: {summary.get('critical', 0)}", file=_out)
+                print(f"  High:     {summary.get('high', 0)}", file=_out)
+                print(f"  Medium:   {summary.get('medium', 0)}", file=_out)
+                print(f"  Low:      {summary.get('low', 0)}", file=_out)
+
+            if result.get('diff'):
+                diff = result['diff']
+                print(f"\nDiff vs scan #{diff.get('ref_scan_id', '?')}:", file=_out)
+                print(f"  New:        {len(diff.get('new', []))}", file=_out)
+                print(f"  Fixed:      {len(diff.get('fixed', []))}", file=_out)
+                print(f"  Persisting: {len(diff.get('persisting', []))}", file=_out)
+
+            print(f"\nReports:", file=_out)
+            print(f"  JSON: {result['report_json']}", file=_out)
             if result.get('report_html'):
-                print(f"  HTML: {result['report_html']}")
-            print("="*70 + "\n")
-            
-            return 0  # Exit code 0 = success
-    
+                print(f"  HTML: {result['report_html']}", file=_out)
+            print("="*70 + "\n", file=_out)
+
+            # --fail-on CI/CD exit code
+            if fail_on:
+                if _check_fail_on(result, fail_on):
+                    logger.warning(
+                        f"--fail-on {fail_on}: findings at or above threshold found"
+                    )
+                    return 10  # Exit code 10 = findings exceed threshold
+                else:
+                    logger.info(f"--fail-on {fail_on}: no findings at threshold — CI/CD pass")
+
+            return 0
+
     except PermissionError:
-        return 1  # Exit code 1 = permission error
-    
+        return 1
+
     except Exception as e:
         logger.exception(f"Scan failed: {e}")
-        print(f"\n❌ UNEXPECTED ERROR: {e}\n")
-        return 1  # Exit code 1 = unexpected error
+        print(f"\nUNEXPECTED ERROR: {e}\n")
+        return 1
 
 
 def main(argv=None):
@@ -398,8 +574,9 @@ def main(argv=None):
     parser = create_parser()
     args = parser.parse_args(argv)
     
-    # Print banner (unless quiet)
-    if not args.quiet:
+    # Print banner (unless quiet or SARIF mode — SARIF uses stdout for JSON output only)
+    sarif_mode = getattr(args, 'sarif', False)
+    if not args.quiet and not sarif_mode:
         print_banner()
     
     # Load configuration
@@ -427,6 +604,12 @@ def main(argv=None):
     
     if args.no_robots:
         cli_overrides.setdefault('crawler', {})['respect_robots_txt'] = False
+
+    if args.js:
+        cli_overrides.setdefault('crawler', {})['js_rendering'] = True
+
+    if args.no_crawl:
+        cli_overrides.setdefault('crawler', {})['no_crawl'] = True
     
     # Validate and process --rate flag
     if args.rate is not None:
@@ -465,6 +648,19 @@ def main(argv=None):
     
     if args.use_ai:
         cli_overrides.setdefault('ai', {})['enabled'] = True
+
+    if hasattr(args, 'ai_provider') and args.ai_provider:
+        cli_overrides.setdefault('ai', {})['provider'] = args.ai_provider
+
+    if hasattr(args, 'ai_model') and args.ai_model:
+        cli_overrides.setdefault('ai', {})['model'] = args.ai_model
+
+    if hasattr(args, 'ai_stream') and args.ai_stream:
+        cli_overrides.setdefault('ai', {})['streaming'] = True
+
+    if hasattr(args, 'ai_budget') and args.ai_budget is not None:
+        cli_overrides.setdefault('ai', {})['budget_enabled'] = True
+        cli_overrides.setdefault('ai', {})['max_cost_per_scan'] = args.ai_budget
     
     config = Config.load(cli_overrides=cli_overrides)
     config.expand_paths()

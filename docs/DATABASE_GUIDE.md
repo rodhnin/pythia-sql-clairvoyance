@@ -1,8 +1,8 @@
 # Pythia Database Guide
 
-**Database:** SQLite 3.x  
-**Location:** `~/.argos/argos.db` (shared with Argus/Hephaestus)  
-**Schema Version:** 1.0
+**Database:** SQLite 3.x
+**Location:** `~/.argos/argos.db` (shared with Argus/Hephaestus)
+**Schema Version:** 1.1
 
 ---
 
@@ -14,10 +14,11 @@ Pythia uses **SQLite** for persistent storage of:
 -   SQL injection scan history and metadata
 -   SQL injection findings and evidence
 -   Consent verification tokens (shared)
+-   AI cost tracking (shared)
 
 **Important:** Pythia shares the database with Argus (WordPress scanner) and Hephaestus (API security tester). This enables unified security reporting across all tools in the Argos ecosystem.
 
-**Note:** This guide provides SQL query examples until **IMPROV-011 (Interactive Database CLI)** is implemented in v0.3.0.
+**Note:** This guide provides SQL query examples until **IMPROV-011 (Interactive Database CLI)** is planned for v0.3.0.
 
 ---
 
@@ -84,7 +85,7 @@ CREATE INDEX idx_consent_tokens_verified ON consent_tokens(verified_at);
 -   `token`: Generated verification token (format: `verify-XXXX`)
 -   `method`: Verification method (`http` or `dns`)
 -   `created_at`: Token generation time (UTC)
--   `expires_at`: Expiration time (48 hours after creation)
+-   `expires_at`: Expiration time (48 hours after creation by default)
 -   `verified_at`: Verification timestamp (NULL until verified)
 -   `proof_path`: Path to proof file (for HTTP method)
 -   `notes`: Additional notes
@@ -132,15 +133,8 @@ CREATE INDEX idx_scans_status ON scans(status);
 -   `status`: Current status (`running`, `completed`, `failed`, `aborted`)
 -   `report_json_path`: Path to JSON report
 -   `report_html_path`: Path to HTML report
--   `summary`: JSON object with severity counts (e.g., `{"critical": 10, "high": 3, "medium": 1}`)
+-   `summary`: JSON object with severity counts
 -   `error_message`: Error description (if failed)
-
-**Status Values:**
-
--   `running`: Scan in progress
--   `completed`: Scan finished successfully
--   `failed`: Technical error (connection, timeout, DB)
--   `aborted`: User cancelled or target unreachable
 
 ---
 
@@ -169,26 +163,61 @@ CREATE INDEX idx_findings_severity ON findings(severity);
 CREATE INDEX idx_findings_code ON findings(finding_code);
 ```
 
+**Pythia Finding Codes (v0.2.0):**
+
+| Code | Type | DBMS / Vector |
+|------|------|---------------|
+| `PYTHIA-SQL-001` | Error-Based | MySQL / MariaDB |
+| `PYTHIA-SQL-002` | Error-Based | PostgreSQL |
+| `PYTHIA-SQL-003` | Error-Based | MSSQL / SQL Server |
+| `PYTHIA-SQL-004` | Error-Based | Oracle |
+| `PYTHIA-SQL-005` | Error-Based | SQLite |
+| `PYTHIA-SQL-010` | Boolean Blind | Any DBMS |
+| `PYTHIA-SQL-011` | Boolean Blind | Via header injection |
+| `PYTHIA-SQL-020` | Time-Based Blind | MySQL SLEEP() |
+| `PYTHIA-SQL-021` | Time-Based Blind | MSSQL WAITFOR DELAY |
+| `PYTHIA-SQL-022` | Time-Based Blind | PostgreSQL pg_sleep() |
+| `PYTHIA-SQL-030` | UNION-Based | GET/POST parameter |
+| `PYTHIA-SQL-031` | UNION-Based | Via cookie |
+| `PYTHIA-SQL-040` | Second-Order | Store → retrieve pattern |
+| `PYTHIA-SQL-050` | ORDER BY Injection | Numeric sort parameter |
+
+---
+
+#### 5. `ai_costs` (added v0.2.0)
+
+Tracks AI provider usage and costs per scan, shared across the Argos Suite.
+
+```sql
+CREATE TABLE ai_costs (
+    cost_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    scan_id INTEGER DEFAULT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+    FOREIGN KEY (scan_id) REFERENCES scans(scan_id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_ai_costs_tool ON ai_costs(tool);
+CREATE INDEX idx_ai_costs_scan_id ON ai_costs(scan_id);
+CREATE INDEX idx_ai_costs_created ON ai_costs(created_at);
+```
+
 **Columns:**
 
--   `finding_id`: Auto-increment primary key
--   `scan_id`: Foreign key to scans table (CASCADE delete)
--   `finding_code`: Finding identifier (e.g., `PYTHIA-SQL-001`, `PYTHIA-SQL-010`, `PYTHIA-SQL-020`)
--   `title`: Finding title/description
--   `severity`: Severity level (`critical`, `high`, `medium`, `low`, `info`)
--   `confidence`: Confidence level (`high`, `medium`, `low`)
--   `evidence_type`: Type of evidence (`http_response`, `boolean_blind`, `time_based`, `union_based`)
--   `evidence_value`: JSON string with SQL injection evidence (payload, response, timing, etc.)
--   `recommendation`: Remediation guidance
--   `references`: JSON array of reference URLs (OWASP, CWE)
--   `created_at`: Finding creation time (UTC)
-
-**Pythia Finding Codes:**
-
--   `PYTHIA-SQL-001`: Error-Based SQL Injection
--   `PYTHIA-SQL-010`: Boolean Blind SQL Injection
--   `PYTHIA-SQL-020`: Time-Based Blind SQL Injection
--   `PYTHIA-SQL-030`: UNION-Based SQL Injection
+-   `cost_id`: Auto-increment primary key
+-   `tool`: Tool name (`pythia`, `argus`, `hephaestus`)
+-   `provider`: AI provider (`openai`, `anthropic`, `ollama`)
+-   `model`: Model identifier (e.g., `gpt-4o-mini-2024-07-18`)
+-   `input_tokens`: Number of input tokens used
+-   `output_tokens`: Number of output tokens generated
+-   `cost_usd`: Total cost in USD for this request
+-   `scan_id`: Associated scan (nullable)
+-   `created_at`: Timestamp (UTC)
 
 ---
 
@@ -304,7 +333,7 @@ SELECT
 FROM scans s
 LEFT JOIN clients c ON s.client_id = c.client_id
 LEFT JOIN findings f ON s.scan_id = f.scan_id
-WHERE s.scan_id = 617
+WHERE s.scan_id = 42
   AND s.tool = 'pythia'
 GROUP BY s.scan_id;
 ```
@@ -321,7 +350,7 @@ SELECT
     json_extract(evidence_value, '$.parameter') AS vulnerable_param,
     json_extract(evidence_value, '$.payload') AS sqli_payload
 FROM findings
-WHERE scan_id = 617
+WHERE scan_id = 42
 ORDER BY
     CASE severity
         WHEN 'critical' THEN 1
@@ -331,12 +360,13 @@ ORDER BY
     END;
 ```
 
-#### Get Error-Based SQL Injection Findings
+#### Get Error-Based SQL Injection Findings (All DBMS Types)
 
 ```sql
 SELECT
     s.domain,
     s.scan_id,
+    f.finding_code,
     f.title,
     f.severity,
     json_extract(f.evidence_value, '$.parameter') AS param,
@@ -344,16 +374,17 @@ SELECT
     f.created_at
 FROM findings f
 JOIN scans s ON f.scan_id = s.scan_id
-WHERE f.finding_code = 'PYTHIA-SQL-001'
+WHERE f.finding_code IN ('PYTHIA-SQL-001','PYTHIA-SQL-002','PYTHIA-SQL-003','PYTHIA-SQL-004','PYTHIA-SQL-005')
   AND s.tool = 'pythia'
 ORDER BY f.created_at DESC;
 ```
 
-#### Get Time-Based Blind SQLi Findings
+#### Get Time-Based Blind SQLi Findings (All DBMS)
 
 ```sql
 SELECT
     s.domain,
+    f.finding_code,
     f.title,
     f.severity,
     json_extract(f.evidence_value, '$.parameter') AS param,
@@ -361,16 +392,17 @@ SELECT
     json_extract(f.evidence_value, '$.baseline_time_seconds') AS baseline
 FROM findings f
 JOIN scans s ON f.scan_id = s.scan_id
-WHERE f.finding_code = 'PYTHIA-SQL-020'
+WHERE f.finding_code IN ('PYTHIA-SQL-020','PYTHIA-SQL-021','PYTHIA-SQL-022')
   AND s.tool = 'pythia'
 ORDER BY s.started_at DESC;
 ```
 
-#### Get UNION-Based SQL Injection with Column Info
+#### Get UNION-Based SQL Injection Findings
 
 ```sql
 SELECT
     s.domain,
+    f.finding_code,
     f.title,
     json_extract(f.evidence_value, '$.parameter') AS param,
     json_extract(f.evidence_value, '$.columns_detected') AS columns,
@@ -378,8 +410,25 @@ SELECT
     f.recommendation
 FROM findings f
 JOIN scans s ON f.scan_id = s.scan_id
-WHERE f.finding_code = 'PYTHIA-SQL-030'
+WHERE f.finding_code IN ('PYTHIA-SQL-030','PYTHIA-SQL-031')
   AND s.tool = 'pythia';
+```
+
+#### Get Second-Order and ORDER BY Injection Findings
+
+```sql
+SELECT
+    s.domain,
+    f.finding_code,
+    f.title,
+    f.severity,
+    json_extract(f.evidence_value, '$.parameter') AS param,
+    f.created_at
+FROM findings f
+JOIN scans s ON f.scan_id = s.scan_id
+WHERE f.finding_code IN ('PYTHIA-SQL-040','PYTHIA-SQL-050')
+  AND s.tool = 'pythia'
+ORDER BY f.created_at DESC;
 ```
 
 ---
@@ -389,45 +438,16 @@ WHERE f.finding_code = 'PYTHIA-SQL-030'
 #### List All Clients
 
 ```sql
-SELECT
-    client_id,
-    name,
-    domain,
-    contact_email,
-    created_at
+SELECT client_id, name, domain, contact_email, created_at
 FROM clients
 ORDER BY created_at DESC;
-```
-
-#### Find Client by Domain
-
-```sql
-SELECT *
-FROM clients
-WHERE domain LIKE '%example.com%';
 ```
 
 #### Add New Client
 
 ```sql
 INSERT INTO clients (name, domain, contact_email, notes)
-VALUES ('Acme Corp', 'acme.com', 'admin@acme.com', 'E-commerce client with SQL injection concerns');
-```
-
-#### Update Client
-
-```sql
-UPDATE clients
-SET contact_email = 'security@acme.com',
-    notes = 'Upgraded to aggressive SQL injection testing',
-    updated_at = datetime('now', 'utc')
-WHERE client_id = 1;
-```
-
-#### Delete Client
-
-```sql
-DELETE FROM clients WHERE client_id = 1;
+VALUES ('Acme Corp', 'acme.com', 'admin@acme.com', 'E-commerce client');
 ```
 
 ---
@@ -437,46 +457,10 @@ DELETE FROM clients WHERE client_id = 1;
 #### List Recent Pythia Scans (Last 10)
 
 ```sql
-SELECT
-    scan_id,
-    domain,
-    mode,
-    status,
-    started_at,
-    total_findings
+SELECT scan_id, domain, mode, status, started_at, total_findings
 FROM v_recent_scans
 WHERE tool = 'pythia'
 LIMIT 10;
-```
-
-#### Filter Pythia Scans by Domain
-
-```sql
-SELECT
-    scan_id,
-    mode,
-    status,
-    started_at,
-    finished_at,
-    summary
-FROM scans
-WHERE tool = 'pythia'
-  AND domain = 'localhost:8081'
-ORDER BY started_at DESC;
-```
-
-#### Filter Scans by Status (Failed)
-
-```sql
-SELECT
-    scan_id,
-    domain,
-    started_at,
-    error_message
-FROM scans
-WHERE tool = 'pythia'
-  AND status = 'failed'
-ORDER BY started_at DESC;
 ```
 
 #### Get Pythia Scan Statistics
@@ -495,15 +479,14 @@ WHERE tool = 'pythia'
 GROUP BY mode, status;
 ```
 
-#### Count Scans by Tool (Pythia vs Argus vs Hephaestus)
+#### Count Scans by Tool
 
 ```sql
 SELECT
     tool,
     COUNT(*) AS total_scans,
     SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
-    SUM(CASE WHEN status = 'aborted' THEN 1 ELSE 0 END) AS aborted
+    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
 FROM scans
 GROUP BY tool
 ORDER BY tool;
@@ -512,28 +495,6 @@ ORDER BY tool;
 ---
 
 ### Finding Management
-
-#### List All SQL Injection Findings for a Scan
-
-```sql
-SELECT
-    finding_id,
-    finding_code,
-    title,
-    severity,
-    confidence,
-    json_extract(evidence_value, '$.method') AS http_method,
-    json_extract(evidence_value, '$.parameter') AS param
-FROM findings
-WHERE scan_id = 617
-ORDER BY
-    CASE severity
-        WHEN 'critical' THEN 1
-        WHEN 'high' THEN 2
-        WHEN 'medium' THEN 3
-        WHEN 'low' THEN 4
-    END;
-```
 
 #### Get Critical SQL Injection Findings (Last 20)
 
@@ -551,24 +512,6 @@ WHERE s.tool = 'pythia'
   AND f.severity IN ('critical', 'high')
 ORDER BY f.created_at DESC
 LIMIT 20;
-```
-
-#### Search Findings by Code
-
-```sql
-SELECT
-    s.domain,
-    s.scan_id,
-    f.title,
-    f.severity,
-    json_extract(f.evidence_value, '$.parameter') AS param,
-    json_extract(f.evidence_value, '$.payload') AS payload,
-    f.created_at
-FROM findings f
-JOIN scans s ON f.scan_id = s.scan_id
-WHERE f.finding_code = 'PYTHIA-SQL-001'
-  AND s.tool = 'pythia'
-ORDER BY f.created_at DESC;
 ```
 
 #### Count SQL Injection Findings by Severity for Domain
@@ -591,43 +534,82 @@ ORDER BY
     END;
 ```
 
-#### Get SQL Injection Findings with Evidence Details
+#### SQL Injection Types Distribution (All Codes)
 
 ```sql
 SELECT
-    finding_code,
-    title,
-    severity,
-    json_extract(evidence_value, '$.type') AS evidence_type,
-    json_extract(evidence_value, '$.parameter') AS param,
-    json_extract(evidence_value, '$.payload') AS payload,
-    json_extract(evidence_value, '$.dbms') AS database,
-    recommendation
-FROM findings
-WHERE scan_id = 617
-  AND evidence_value IS NOT NULL
-ORDER BY severity;
-```
-
-#### Get All Blind SQL Injection Findings (Boolean + Time-Based)
-
-```sql
-SELECT
-    s.domain,
-    f.finding_code,
-    f.title,
-    f.severity,
-    json_extract(f.evidence_value, '$.parameter') AS param,
-    CASE
-        WHEN f.finding_code = 'PYTHIA-SQL-010' THEN 'Boolean Blind'
-        WHEN f.finding_code = 'PYTHIA-SQL-020' THEN 'Time-Based Blind'
+    CASE f.finding_code
+        WHEN 'PYTHIA-SQL-001' THEN 'Error-Based (MySQL)'
+        WHEN 'PYTHIA-SQL-002' THEN 'Error-Based (PostgreSQL)'
+        WHEN 'PYTHIA-SQL-003' THEN 'Error-Based (MSSQL)'
+        WHEN 'PYTHIA-SQL-004' THEN 'Error-Based (Oracle)'
+        WHEN 'PYTHIA-SQL-005' THEN 'Error-Based (SQLite)'
+        WHEN 'PYTHIA-SQL-010' THEN 'Boolean Blind'
+        WHEN 'PYTHIA-SQL-011' THEN 'Boolean Blind (Header)'
+        WHEN 'PYTHIA-SQL-020' THEN 'Time-Based (MySQL)'
+        WHEN 'PYTHIA-SQL-021' THEN 'Time-Based (MSSQL)'
+        WHEN 'PYTHIA-SQL-022' THEN 'Time-Based (PostgreSQL)'
+        WHEN 'PYTHIA-SQL-030' THEN 'UNION-Based'
+        WHEN 'PYTHIA-SQL-031' THEN 'UNION-Based (Cookie)'
+        WHEN 'PYTHIA-SQL-040' THEN 'Second-Order'
+        WHEN 'PYTHIA-SQL-050' THEN 'ORDER BY Injection'
+        ELSE 'Other'
     END AS sqli_type,
-    f.created_at
+    COUNT(*) AS count,
+    SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) AS critical,
+    SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) AS high
 FROM findings f
 JOIN scans s ON f.scan_id = s.scan_id
-WHERE f.finding_code IN ('PYTHIA-SQL-010', 'PYTHIA-SQL-020')
-  AND s.tool = 'pythia'
-ORDER BY f.created_at DESC;
+WHERE s.tool = 'pythia'
+GROUP BY f.finding_code
+ORDER BY count DESC;
+```
+
+---
+
+### AI Cost Queries (v0.2.0)
+
+#### View Total AI Costs for Pythia
+
+```sql
+SELECT
+    provider,
+    model,
+    COUNT(*) AS requests,
+    SUM(input_tokens) AS total_input_tokens,
+    SUM(output_tokens) AS total_output_tokens,
+    ROUND(SUM(cost_usd), 4) AS total_cost_usd
+FROM ai_costs
+WHERE tool = 'pythia'
+GROUP BY provider, model
+ORDER BY total_cost_usd DESC;
+```
+
+#### View AI Costs for a Specific Scan
+
+```sql
+SELECT
+    provider,
+    model,
+    input_tokens,
+    output_tokens,
+    cost_usd,
+    created_at
+FROM ai_costs
+WHERE tool = 'pythia'
+  AND scan_id = 42;
+```
+
+#### AI Costs Across All Tools (Argos Suite)
+
+```sql
+SELECT
+    tool,
+    provider,
+    ROUND(SUM(cost_usd), 4) AS total_cost_usd
+FROM ai_costs
+GROUP BY tool, provider
+ORDER BY total_cost_usd DESC;
 ```
 
 ---
@@ -637,12 +619,7 @@ ORDER BY f.created_at DESC;
 #### List Verified Tokens
 
 ```sql
-SELECT
-    domain,
-    method,
-    verified_at,
-    expires_at,
-    status
+SELECT domain, method, verified_at, expires_at, status
 FROM v_verified_domains
 ORDER BY verified_at DESC;
 ```
@@ -668,25 +645,14 @@ ORDER BY created_at DESC
 LIMIT 1;
 ```
 
-#### List Expired Tokens
+#### Extend Token Expiry (for lab environments)
 
 ```sql
-SELECT
-    domain,
-    token,
-    verified_at,
-    expires_at
-FROM consent_tokens
-WHERE verified_at IS NOT NULL
-  AND datetime('now', 'utc') >= expires_at
-ORDER BY expires_at DESC;
-```
-
-#### Revoke Token (Delete)
-
-```sql
-DELETE FROM consent_tokens
-WHERE domain = 'example.com';
+-- Extend localhost token by 30 days (useful for lab testing)
+UPDATE consent_tokens
+SET expires_at = datetime('now', '+30 days', 'utc')
+WHERE domain = 'localhost'
+  AND verified_at IS NOT NULL;
 ```
 
 ---
@@ -696,47 +662,18 @@ WHERE domain = 'example.com';
 #### Pythia Database Statistics
 
 ```sql
-SELECT
-    'Total Pythia Scans' AS category,
-    COUNT(*) AS count
-FROM scans
-WHERE tool = 'pythia'
+SELECT 'Total Pythia Scans' AS category, COUNT(*) AS count
+FROM scans WHERE tool = 'pythia'
 UNION ALL
-SELECT
-    'Pythia SQL Injection Findings',
-    COUNT(*)
-FROM findings f
-JOIN scans s ON f.scan_id = s.scan_id
-WHERE s.tool = 'pythia'
+SELECT 'Pythia SQL Injection Findings', COUNT(*)
+FROM findings f JOIN scans s ON f.scan_id = s.scan_id WHERE s.tool = 'pythia'
 UNION ALL
-SELECT
-    'Critical SQL Injections',
-    COUNT(*)
-FROM findings f
-JOIN scans s ON f.scan_id = s.scan_id
-WHERE s.tool = 'pythia'
-  AND f.severity = 'critical'
+SELECT 'Critical SQL Injections', COUNT(*)
+FROM findings f JOIN scans s ON f.scan_id = s.scan_id
+WHERE s.tool = 'pythia' AND f.severity = 'critical'
 UNION ALL
-SELECT
-    'High Severity SQL Injections',
-    COUNT(*)
-FROM findings f
-JOIN scans s ON f.scan_id = s.scan_id
-WHERE s.tool = 'pythia'
-  AND f.severity = 'high';
-```
-
-#### Pythia Scan Success Rate
-
-```sql
-SELECT
-    status,
-    COUNT(*) AS count,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM scans WHERE tool = 'pythia'), 2) AS percentage
-FROM scans
-WHERE tool = 'pythia'
-GROUP BY status
-ORDER BY count DESC;
+SELECT 'Total AI Cost (USD)', ROUND(SUM(cost_usd), 4)
+FROM ai_costs WHERE tool = 'pythia';
 ```
 
 #### Top 10 Domains by SQL Injection Findings
@@ -747,52 +684,15 @@ SELECT
     COUNT(f.finding_id) AS total_sqli_findings,
     SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) AS critical,
     SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) AS high,
-    SUM(CASE WHEN f.finding_code = 'PYTHIA-SQL-001' THEN 1 ELSE 0 END) AS error_based,
-    SUM(CASE WHEN f.finding_code = 'PYTHIA-SQL-020' THEN 1 ELSE 0 END) AS time_based,
-    SUM(CASE WHEN f.finding_code = 'PYTHIA-SQL-030' THEN 1 ELSE 0 END) AS union_based
+    SUM(CASE WHEN f.finding_code LIKE 'PYTHIA-SQL-00%' THEN 1 ELSE 0 END) AS error_based,
+    SUM(CASE WHEN f.finding_code LIKE 'PYTHIA-SQL-02%' THEN 1 ELSE 0 END) AS time_based,
+    SUM(CASE WHEN f.finding_code LIKE 'PYTHIA-SQL-03%' THEN 1 ELSE 0 END) AS union_based
 FROM scans s
 JOIN findings f ON s.scan_id = f.scan_id
 WHERE s.tool = 'pythia'
 GROUP BY s.domain
 ORDER BY total_sqli_findings DESC
 LIMIT 10;
-```
-
-#### SQL Injection Findings Trend (Last 30 Days)
-
-```sql
-SELECT
-    DATE(s.started_at) AS scan_date,
-    COUNT(DISTINCT s.scan_id) AS pythia_scans,
-    COUNT(f.finding_id) AS sqli_findings,
-    SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) AS critical
-FROM scans s
-LEFT JOIN findings f ON s.scan_id = f.scan_id
-WHERE s.tool = 'pythia'
-  AND s.started_at >= datetime('now', '-30 days')
-GROUP BY DATE(s.started_at)
-ORDER BY scan_date DESC;
-```
-
-#### SQL Injection Types Distribution
-
-```sql
-SELECT
-    CASE f.finding_code
-        WHEN 'PYTHIA-SQL-001' THEN 'Error-Based'
-        WHEN 'PYTHIA-SQL-010' THEN 'Boolean Blind'
-        WHEN 'PYTHIA-SQL-020' THEN 'Time-Based Blind'
-        WHEN 'PYTHIA-SQL-030' THEN 'UNION-Based'
-        ELSE 'Other'
-    END AS sqli_type,
-    COUNT(*) AS count,
-    SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) AS critical,
-    SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) AS high
-FROM findings f
-JOIN scans s ON f.scan_id = s.scan_id
-WHERE s.tool = 'pythia'
-GROUP BY f.finding_code
-ORDER BY count DESC;
 ```
 
 ---
@@ -802,18 +702,8 @@ ORDER BY count DESC;
 #### Backup Database
 
 ```bash
-# Command line
 sqlite3 ~/.argos/argos.db ".backup /tmp/pythia-backup-$(date +%Y%m%d).db"
-
-# Or copy file directly
 cp ~/.argos/argos.db ~/backups/argos-backup-$(date +%Y%m%d).db
-```
-
-#### Database Size
-
-```sql
-SELECT page_count * page_size / 1024.0 / 1024.0 AS size_mb
-FROM pragma_page_count(), pragma_page_size();
 ```
 
 #### Vacuum (Optimize)
@@ -837,14 +727,6 @@ WHERE tool = 'pythia'
 -- Findings will auto-delete (CASCADE)
 ```
 
-#### Delete Pythia Scans Without Findings
-
-```sql
-DELETE FROM scans
-WHERE tool = 'pythia'
-  AND scan_id NOT IN (SELECT DISTINCT scan_id FROM findings);
-```
-
 ---
 
 ## Database Access from Python
@@ -854,14 +736,13 @@ WHERE tool = 'pythia'
 ```python
 from pyth.core.db import ArgosDB
 
-# Get database instance
 db = ArgosDB()
 
 # Start a new scan
 scan_id = db.start_scan(
     tool='pythia',
     domain='example.com',
-    target_url='http://example.com:8080',
+    target_url='http://example.com:8081',
     mode='aggressive'
 )
 
@@ -873,20 +754,30 @@ db.save_finding(
     severity='critical',
     confidence='high',
     evidence_type='http_response',
-    evidence_value='{"parameter": "id", "payload": "\'", "dbms": "MySQL"}',
+    evidence_value='{"parameter": "id", "payload": "\'", "dbms": "MySQL 8.0.32"}',
     recommendation='Use parameterized queries'
 )
 
-# Finish scan
-db.finish_scan(scan_id, status='completed')
-
-# Get scan details
-scan = db.get_scan(scan_id)
-print(f"Scan status: {scan['status']}")
+# Save AI cost (v0.2.0)
+db.save_ai_cost(
+    tool='pythia',
+    provider='openai',
+    model='gpt-4o-mini-2024-07-18',
+    input_tokens=2500,
+    output_tokens=1500,
+    cost_usd=0.02,
+    scan_id=scan_id
+)
 
 # Get findings
 findings = db.get_findings(scan_id)
 print(f"Total SQL injection findings: {len(findings)}")
+
+# List recent scans
+scans = db.list_scans(tool='pythia', limit=10)
+
+# Finish scan
+db.finish_scan(scan_id, status='completed')
 ```
 
 ### Direct SQL Access
@@ -895,39 +786,21 @@ print(f"Total SQL injection findings: {len(findings)}")
 import sqlite3
 from pathlib import Path
 
-# Connect to database
 db_path = Path.home() / ".argos" / "argos.db"
 conn = sqlite3.connect(str(db_path))
-conn.row_factory = sqlite3.Row  # Access columns by name
+conn.row_factory = sqlite3.Row
 
-# Execute query
 cursor = conn.execute("""
     SELECT * FROM scans
     WHERE tool = 'pythia'
       AND status = 'completed'
+    ORDER BY started_at DESC
     LIMIT 10
 """)
 
 rows = cursor.fetchall()
 for row in rows:
     print(f"Scan {row['scan_id']}: {row['domain']} - {row['started_at']}")
-
-# Get SQL injection findings
-cursor = conn.execute("""
-    SELECT
-        f.finding_code,
-        f.title,
-        f.severity,
-        json_extract(f.evidence_value, '$.parameter') AS param
-    FROM findings f
-    JOIN scans s ON f.scan_id = s.scan_id
-    WHERE s.tool = 'pythia'
-      AND s.scan_id = ?
-""", (scan_id,))
-
-findings = cursor.fetchall()
-for finding in findings:
-    print(f"{finding['finding_code']}: {finding['title']} (param: {finding['param']})")
 
 conn.close()
 ```
@@ -939,23 +812,11 @@ conn.close()
 In v0.3.0, these SQL queries will be replaced with intuitive commands:
 
 ```bash
-# Instead of SQL:
-sqlite3 ~/.argos/argos.db "SELECT * FROM scans WHERE tool = 'pythia' LIMIT 10"
-
 # Future (v0.3.0):
 python -m pyth db scans list --limit 10
-
-# Instead of:
-sqlite3 ~/.argos/argos.db "SELECT * FROM findings WHERE finding_code = 'PYTHIA-SQL-001'"
-
-# Future:
 python -m pyth db findings search --code PYTHIA-SQL-001
-
-# Instead of:
-sqlite3 ~/.argos/argos.db "SELECT * FROM v_critical_findings WHERE tool = 'pythia' LIMIT 20"
-
-# Future:
 python -m pyth db findings critical --limit 20
+python -m pyth db costs summary
 ```
 
 **Until then, use the SQL queries provided in this guide.**
@@ -970,105 +831,26 @@ python -m pyth db findings critical --limit 20
 Error: database is locked
 ```
 
-**Solution:** Another process is using the database. Wait or:
+**Solution:** Another process is using the database.
 
 ```bash
 lsof ~/.argos/argos.db  # Find process
-kill <PID>  # Kill if needed
 ```
 
 ### Database Corrupted
 
-```
-Error: file is not a database
-```
-
 **Solution:** Pythia auto-recovers. Manual recovery:
 
 ```bash
-# Backup corrupted file
 mv ~/.argos/argos.db ~/.argos/argos.db.corrupted
-
-# Run scan (creates fresh DB)
-python -m pyth --target http://localhost:8081 --safe
+python -m pyth --target http://localhost:8081 --safe  # Creates fresh DB
 ```
 
 ### Read-Only Database
 
-```
-Warning: Database is read-only
-```
-
-**Solution:** Fix permissions:
-
 ```bash
 chmod 644 ~/.argos/argos.db
 chmod 755 ~/.argos
-```
-
-### Foreign Key Constraint Error
-
-```
-Error: FOREIGN KEY constraint failed
-```
-
-**Solution:** This happens if you try to insert a scan with a non-existent client_id. Either:
-
--   Set `client_id = NULL` (default)
--   Create the client first with `INSERT INTO clients...`
-
----
-
-## Advanced Queries
-
-### Compare SQL Injection Findings Across Multiple Scans
-
-```sql
-SELECT
-    s1.scan_id AS scan1,
-    s2.scan_id AS scan2,
-    s1.domain,
-    COUNT(DISTINCT f1.finding_code) AS unique_to_scan1,
-    COUNT(DISTINCT f2.finding_code) AS unique_to_scan2,
-    COUNT(DISTINCT CASE WHEN f1.finding_code = f2.finding_code THEN f1.finding_code END) AS common
-FROM scans s1
-JOIN scans s2 ON s1.domain = s2.domain AND s1.scan_id < s2.scan_id
-LEFT JOIN findings f1 ON s1.scan_id = f1.scan_id
-LEFT JOIN findings f2 ON s2.scan_id = f2.scan_id
-WHERE s1.tool = 'pythia' AND s2.tool = 'pythia'
-GROUP BY s1.scan_id, s2.scan_id, s1.domain;
-```
-
-### Find Domains with No SQL Injection Findings
-
-```sql
-SELECT
-    s.domain,
-    s.scan_id,
-    s.started_at,
-    s.mode
-FROM scans s
-WHERE s.tool = 'pythia'
-  AND s.status = 'completed'
-  AND s.scan_id NOT IN (
-      SELECT DISTINCT scan_id FROM findings
-  )
-ORDER BY s.started_at DESC;
-```
-
-### Get Average Scan Duration by Mode
-
-```sql
-SELECT
-    mode,
-    COUNT(*) AS total_scans,
-    ROUND(AVG((julianday(finished_at) - julianday(started_at)) * 86400), 2) AS avg_seconds,
-    ROUND(MIN((julianday(finished_at) - julianday(started_at)) * 86400), 2) AS min_seconds,
-    ROUND(MAX((julianday(finished_at) - julianday(started_at)) * 86400), 2) AS max_seconds
-FROM scans
-WHERE tool = 'pythia'
-  AND finished_at IS NOT NULL
-GROUP BY mode;
 ```
 
 ---
@@ -1078,9 +860,10 @@ GROUP BY mode;
 | Version | Date     | Changes                                       |
 | ------- | -------- | --------------------------------------------- |
 | **1.0** | Nov 2025 | Initial schema (shared with Argus/Hephaestus) |
+| **1.1** | Mar 2026 | Added `ai_costs` table (v0.2.0); `save_ai_cost()` Python API |
 
 ---
 
-**Schema Version:** 1.0  
-**Shared Database:** `~/.argos/argos.db` (Argus, Hephaestus, Pythia)  
+**Schema Version:** 1.1
+**Shared Database:** `~/.argos/argos.db` (Argus, Hephaestus, Pythia)
 **Next Update:** v0.3.0 (Interactive CLI - IMPROV-011)

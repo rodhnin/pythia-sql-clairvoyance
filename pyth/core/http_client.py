@@ -476,10 +476,42 @@ class RateLimitedSession:
         return self.session.head(url, **kwargs)
 
 
+def parse_auth_headers(auth_headers: Optional[list]) -> Dict[str, str]:
+    """
+    Parse a list of auth header strings into a dict.
+
+    Handles formats like:
+      "Authorization: Bearer eyJhbGc..."
+      "X-API-Key: sk-prod-xxx"
+      "Cookie: session=abc; csrf=xyz"
+
+    Args:
+        auth_headers: List of "Name: Value" strings
+
+    Returns:
+        Dict of header name → value
+    """
+    result: Dict[str, str] = {}
+    if not auth_headers:
+        return result
+    for header in auth_headers:
+        if ':' in header:
+            name, _, value = header.partition(':')
+            name = name.strip()
+            value = value.strip()
+            if name:
+                result[name] = value
+                logger.debug(f"Auth header registered: {name}")
+        else:
+            logger.warning(f"Malformed auth header (no ':'): {header!r}")
+    return result
+
+
 def create_http_client(
     mode: str = 'safe',
     config=None,
-    cookie_string: Optional[str] = None
+    cookie_string: Optional[str] = None,
+    auth_headers: Optional[list] = None,
 ) -> RateLimitedSession:
     """
     Create HTTP client with appropriate rate limit for SQLi scan mode.
@@ -491,39 +523,49 @@ def create_http_client(
         mode: Scan mode ('safe' or 'aggressive')
         config: Config instance (optional, uses default if None)
         cookie_string: Optional cookie string for authenticated scans
-    
+        auth_headers: Optional list of "Name: Value" strings (Bearer, API keys, etc.)
+
     Returns:
         RateLimitedSession configured for specified mode
-    
+
     Rate Limits by Mode:
         - safe: 2.0 req/s (default, no consent required)
         - aggressive: 5.0 req/s (requires consent token verification)
-    
+
     Example:
         # Safe mode (conservative, no consent needed)
         client = create_http_client(mode='safe')
-        
-        # Aggressive mode with cookies (requires consent)
+
+        # With Bearer token
         client = create_http_client(
-            mode='aggressive',
-            cookie_string="PHPSESSID=abc123",
+            mode='safe',
+            auth_headers=["Authorization: Bearer eyJhbGc..."],
             config=config
         )
     """
     config = config or get_config()
-    
+
     # Select rate limit based on mode
     if mode == 'aggressive':
         rate_limit = config.rate_limit_aggressive
-        logger.info(f"Creating HTTP client for AGGRESSIVE SQLi testing (requires consent)")
+        logger.info("Creating HTTP client for AGGRESSIVE SQLi testing (requires consent)")
     else:
         rate_limit = config.rate_limit_safe
-        logger.info(f"Creating HTTP client for SAFE SQLi testing (passive detection)")
-    
+        logger.info("Creating HTTP client for SAFE SQLi testing (passive detection)")
+
     logger.info(f"SQLi scan mode: {mode.upper()}, rate limit: {rate_limit:.2f} req/s")
     logger.info(f"Thread pool size: {config.max_workers} concurrent workers")
-    
+
     if cookie_string:
         logger.info("Cookies provided for authenticated scanning")
-    
-    return RateLimitedSession(rate_limit, config, cookie_string)
+
+    session = RateLimitedSession(rate_limit, config, cookie_string)
+
+    # Inject custom auth headers (Bearer, API key, etc.)
+    if auth_headers:
+        parsed = parse_auth_headers(auth_headers)
+        if parsed:
+            session.session.headers.update(parsed)
+            logger.info(f"Auth headers applied to session: {list(parsed.keys())}")
+
+    return session

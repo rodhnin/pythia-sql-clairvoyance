@@ -113,7 +113,7 @@ class Config:
     # ========================================================================
     
     # General
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     author: str = "Rodney Dhavid Jimenez Chacin (rodhnin)"
     github: str = "https://github.com/rodhnin"
     contact: str = "https://rodhnin.com"
@@ -155,7 +155,9 @@ class Config:
     crawler_exclude_extensions: List[str] = field(default_factory=lambda: Config.DEFAULT_EXCLUDE_EXTENSIONS.copy())
     crawler_exclude_patterns: List[str] = field(default_factory=list)
     crawler_respect_robots: bool = True
+    crawler_js_rendering: bool = False
     crawler_delay: float = 0.5
+    crawler_no_crawl: bool = False
     
     # Form Testing Settings
     forms_enable_post: bool = True
@@ -187,8 +189,8 @@ class Config:
     
     # AI integration (LangChain)
     ai_enabled: bool = False
-    ai_provider: str = "ollama"
-    ai_model: str = "llama3.2:latest"
+    ai_provider: str = "openai"
+    ai_model: str = "gpt-4o-mini-2024-07-18"
     ai_temperature: float = 0.3
     ai_max_tokens: int = 2000
     ai_api_key_env: str = "OPENAI_API_KEY"
@@ -198,6 +200,16 @@ class Config:
     ai_remove_credentials: bool = True
     ai_max_evidence_length: int = 500
     ai_ollama_base_url: str = "http://localhost:11434"
+    # Budget limits (IMPROV-005)
+    ai_budget_enabled: bool = False
+    ai_max_cost_per_scan: float = 0.50
+    ai_warn_threshold: float = 0.80
+    ai_abort_on_exceed: bool = True
+    # Streaming (IMPROV-006)
+    ai_streaming: bool = False
+    # Agent with tools (IMPROV-008)
+    ai_agent_enabled: bool = False
+    ai_agent_max_iterations: int = 5
     
     # Advanced
     max_workers: int = 5
@@ -385,7 +397,9 @@ class Config:
             flat['crawler_exclude_extensions'] = crawler.get('exclude_extensions', cls.DEFAULT_EXCLUDE_EXTENSIONS.copy())
             flat['crawler_exclude_patterns'] = crawler.get('exclude_patterns', [])
             flat['crawler_respect_robots'] = crawler.get('respect_robots_txt', cls.crawler_respect_robots)
+            flat['crawler_js_rendering'] = crawler.get('js_rendering', cls.crawler_js_rendering)
             flat['crawler_delay'] = crawler.get('crawl_delay', cls.crawler_delay)
+            flat['crawler_no_crawl'] = crawler.get('no_crawl', cls.crawler_no_crawl)
         
         # Form Settings
         if 'forms' in config_dict:

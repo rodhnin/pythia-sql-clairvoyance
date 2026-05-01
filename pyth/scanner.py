@@ -8,6 +8,7 @@ License: MIT
 
 import time
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Dict, List, Optional
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -18,11 +19,14 @@ from .core.db import get_db
 from .core.report import ReportGenerator
 from .core.ai import analyze_report
 from .core.http_client import create_http_client
+from .core.risk_scoring import enrich_findings_with_risk
 from .checks.crawler import WebCrawler
 from .checks.error_based import ErrorBasedDetector
 from .checks.boolean_blind import BooleanBlindDetector
 from .checks.time_based import TimeBasedDetector
 from .checks.union_based import UnionBasedDetector
+from .checks.order_injection import OrderByDetector
+from .checks.second_order import SecondOrderDetector
 
 logger = get_logger(__name__)
 
@@ -39,36 +43,41 @@ class SQLInjectionScanner:
     3. Boolean blind detection (safe mode)
     4. Time-based detection (aggressive only)
     5. UNION-based detection (aggressive only)
+    6. ORDER BY injection (safe mode)
+    7. Second-order SQLi (aggressive only)
     """
     
     def __init__(
         self,
         config=None,
         cookie_string: Optional[str] = None,
+        auth_headers: Optional[List[str]] = None,
         auto_csrf: bool = False
     ):
         """
         Initialize scanner with configuration.
-        
+
         Args:
             config: Configuration object
             cookie_string: Optional cookie string for authenticated scans
+            auth_headers: List of raw header strings (e.g. ["Authorization: Bearer ..."])
             auto_csrf: Enable automatic CSRF token extraction
         """
         self.config = config or get_config()
         self.db = get_db()
         self.report_gen = ReportGenerator(self.config)
-        
-        # Store authentication settings
-        self.cookie_string = cookie_string
-        self.auto_csrf = auto_csrf
-        
+
+        self.cookie_string  = cookie_string
+        self.auth_headers   = auth_headers or []
+        self.auto_csrf      = auto_csrf
+
         if cookie_string:
             logger.info("Scanner initialized with cookies for authenticated scanning")
-        
+        if self.auth_headers:
+            logger.info(f"Scanner initialized with {len(self.auth_headers)} custom auth header(s)")
         if auto_csrf:
             logger.info("CSRF token auto-extraction enabled")
-        
+
         logger.info("SQL Injection Scanner initialized")
     
     def _extract_params_from_urls(self, alpha_urls: List[str]) -> List[Dict]:
@@ -296,7 +305,10 @@ class SQLInjectionScanner:
             else:
                 normalized_url = base
             
-            dedup_key = (normalized_url, method, vulnerable_param, detection_method)
+            # Dedup key uses base path only (no query params) — same endpoint + param +
+            # detection method = same vulnerability regardless of which query params
+            # were present when it was found (URL-based vs form-based can differ here)
+            dedup_key = (base, method, vulnerable_param, detection_method)
             
             if dedup_key not in seen:
                 # First occurrence - keep it
@@ -340,17 +352,25 @@ class SQLInjectionScanner:
         target: str,
         mode: str = 'safe',
         use_ai: bool = False,
-        ai_tone: str = 'both'
+        ai_tone: str = 'both',
+        compare_providers: Optional[List[Dict]] = None,
+        use_agent: bool = False,
+        diff_ref: Optional[str] = None,
+        sarif: bool = False,
     ) -> Dict:
         """
         Execute full SQL injection scan.
-        
+
         Args:
             target: Target URL to scan
             mode: 'safe' (passive) or 'aggressive' (time-based + UNION)
             use_ai: Enable AI-powered analysis
             ai_tone: 'technical', 'non_technical', or 'both'
-        
+            compare_providers: List of {provider, model} dicts for --ai-compare
+            use_agent: Use AI agent mode with NVD tools for --ai-agent
+            diff_ref: Reference scan ID or "last" for --diff
+            sarif: Output SARIF to stdout for --sarif
+
         Returns:
             Scan results dictionary with report paths
         """
@@ -372,11 +392,15 @@ class SQLInjectionScanner:
             logger.info("CSRF auto-extraction: Enabled")
         logger.info("=" * 70)
         
-        # Create HTTP client with rate limiting AND cookies
+        # Store mode in config so detectors can access it for payload selection
+        self.config.mode = mode
+
+        # Create HTTP client with rate limiting, cookies, and auth headers
         lambda_http = create_http_client(
             mode=mode,
             config=self.config,
-            cookie_string=self.cookie_string
+            cookie_string=self.cookie_string,
+            auth_headers=self.auth_headers,
         )
         
         # Check 1: Aggressive mode consent
@@ -662,17 +686,76 @@ class SQLInjectionScanner:
             logger.info(f"After deduplication: {len(alpha_urls_parsed)} unique contexts to test")
             
             # ================================================================
-            # PHASE 2: ERROR-BASED DETECTION
+            # PHASES 2 + 3: ERROR-BASED + BOOLEAN BLIND (parallel)
             # ================================================================
+            _session_var_forms = [
+                f for f in psi_forms
+                if f.get('parent_url') and f.get('parent_url') != f.get('action', '')
+            ]
+            _regular_forms = [
+                f for f in psi_forms
+                if f not in _session_var_forms
+            ]
+            if _session_var_forms:
+                logger.info(
+                    f"  Session-var forms isolated (will run sequentially after parallel phase): "
+                    f"{len(_session_var_forms)} form(s)"
+                )
+
             logger.info("\n" + "=" * 70)
-            logger.info("[Phase 2/5] Error-Based SQL Injection Detection")
+            logger.info("[Phase 2+3] Error-Based + Boolean Blind (parallel execution)")
+            logger.info(f"           Workers: {self.config.max_workers}")
             logger.info("=" * 70)
-            
+
             delta_error_det = ErrorBasedDetector(self.config, lambda_http, auto_csrf=self.auto_csrf)
-            epsilon_error_findings = delta_error_det.scan(alpha_urls_parsed, psi_forms)
-            
+            kappa_bool_det  = BooleanBlindDetector(self.config, lambda_http, auto_csrf=self.auto_csrf)
+
+            parallel_phases = {
+                'error':   (delta_error_det.scan,  "Error-Based"),
+                'boolean': (kappa_bool_det.scan,    "Boolean Blind"),
+            }
+
+            phase_results_p23: Dict[str, List] = {}
+            with ThreadPoolExecutor(max_workers=min(2, self.config.max_workers)) as executor:
+                future_to_phase = {
+                    executor.submit(scan_fn, alpha_urls_parsed, _regular_forms): (name, label)
+                    for name, (scan_fn, label) in parallel_phases.items()
+                }
+                for future in as_completed(future_to_phase):
+                    pname, plabel = future_to_phase[future]
+                    try:
+                        phase_results_p23[pname] = future.result()
+                        logger.info(f"  ✓ {plabel}: {len(phase_results_p23[pname])} findings")
+                    except Exception as _pe:
+                        logger.error(f"  ✗ {plabel} failed: {_pe}")
+                        phase_results_p23[pname] = []
+
+            epsilon_error_findings = list(phase_results_p23.get('error', []))
+            mu_bool_findings       = phase_results_p23.get('boolean', [])
+
+            # Session-var forms: error-based + boolean-blind, sequential (no race condition)
+            if _session_var_forms:
+                logger.info(
+                    f"  [SESSION-VAR] Testing {len(_session_var_forms)} session-var form(s) "
+                    f"with error-based (sequential)..."
+                )
+                _sv_findings = delta_error_det.scan([], _session_var_forms)
+                if _sv_findings:
+                    logger.info(f"  [SESSION-VAR] ✓ {len(_sv_findings)} finding(s) detected")
+                epsilon_error_findings.extend(_sv_findings)
+
+                logger.info(
+                    f"  [SESSION-VAR] Testing {len(_session_var_forms)} session-var form(s) "
+                    f"with boolean-blind (sequential)..."
+                )
+                _sv_bool_findings = kappa_bool_det.scan([], _session_var_forms)
+                if _sv_bool_findings:
+                    logger.info(f"  [SESSION-VAR] ✓ Boolean-blind: {len(_sv_bool_findings)} finding(s)")
+                mu_bool_findings = list(mu_bool_findings) + _sv_bool_findings
+
             omicron_findings.extend(epsilon_error_findings)
-            
+            omicron_findings.extend(mu_bool_findings)
+
             # Estimate requests
             zeta_error_reqs = len(alpha_urls_parsed) * len(delta_error_det.payloads)
             if psi_forms:
@@ -681,46 +764,17 @@ class SQLInjectionScanner:
                 for theta_form in psi_forms:
                     iota_testable = eta_form_tester.get_testable_inputs(theta_form)
                     zeta_error_reqs += len(iota_testable) * len(delta_error_det.payloads)
-            
-            pi_requests += zeta_error_reqs
-            
-            logger.info(f"Error-based scan complete:")
-            logger.info(f"  - Vulnerabilities found: {len(epsilon_error_findings)}")
-            logger.info(f"  - Requests sent: ~{zeta_error_reqs}")
-            
-            # ================================================================
-            # PHASE 3: BOOLEAN BLIND DETECTION
-            # ================================================================
-            logger.info("\n" + "=" * 70)
-            logger.info("[Phase 3/5] Boolean Blind SQL Injection Detection")
-            logger.info("=" * 70)
-            
-            kappa_bool_det = BooleanBlindDetector(self.config, lambda_http, auto_csrf=self.auto_csrf)
-            
-            logger.info(f"Passing to boolean blind detector:")
-            logger.info(f"  - URLs with params: {len(alpha_urls_parsed)}")
-            logger.info(f"  - Forms: {len(psi_forms)}")
-            
-            if alpha_urls_parsed:
-                logger.debug("First URL to test:")
-                lambda_first = alpha_urls_parsed[0]
-                logger.debug(f"  base_url: {lambda_first['base_url']}")
-                logger.debug(f"  parameters: {lambda_first['parameters']}")
-            
-            mu_bool_findings = kappa_bool_det.scan(alpha_urls_parsed, psi_forms)
-            
-            omicron_findings.extend(mu_bool_findings)
-            
-            # Boolean blind needs baseline + TRUE + FALSE for each param
+
             nu_bool_reqs = 0
             for xi_url in alpha_urls_parsed:
                 nu_bool_reqs += len(xi_url['parameters']) * 3 * len(kappa_bool_det.true_payloads)
-            
-            pi_requests += nu_bool_reqs
-            
-            logger.info(f"Boolean blind scan complete:")
-            logger.info(f"  - Vulnerabilities found: {len(mu_bool_findings)}")
-            logger.info(f"  - Requests sent: ~{nu_bool_reqs}")
+
+            pi_requests += zeta_error_reqs + nu_bool_reqs
+
+            logger.info(f"Parallel phases complete:")
+            logger.info(f"  - Error-based findings:   {len(epsilon_error_findings)}")
+            logger.info(f"  - Boolean blind findings: {len(mu_bool_findings)}")
+            logger.info(f"  - Requests sent: ~{zeta_error_reqs + nu_bool_reqs}")
             
             # ================================================================
             # PHASE 4: TIME-BASED DETECTION (AGGRESSIVE ONLY)
@@ -802,7 +856,43 @@ class SQLInjectionScanner:
                 logger.info("[Phase 5/5] UNION-Based Detection SKIPPED (safe mode)")
                 logger.info("Use --aggressive flag to enable UNION-based detection")
                 logger.info("=" * 70)
-            
+
+            # ================================================================
+            # PHASE 6: ORDER BY Injection (safe mode, all scans)
+            # ================================================================
+            logger.info("\n" + "=" * 70)
+            logger.info("[Phase 6] ORDER BY / GROUP BY Injection Detection")
+            logger.info("=" * 70)
+            try:
+                rho_order_det = OrderByDetector(self.config, lambda_http)
+                rho_order_findings = rho_order_det.scan(alpha_urls_parsed, psi_forms)
+                omicron_findings.extend(rho_order_findings)
+                logger.info(f"  - Vulnerabilities found: {len(rho_order_findings)}")
+            except Exception as _oe:
+                logger.warning(f"ORDER BY detection failed: {_oe}")
+                rho_order_findings = []
+
+            # ================================================================
+            # PHASE 7: Second-Order SQLi (aggressive mode only)
+            # ================================================================
+            if mode == 'aggressive':
+                logger.info("\n" + "=" * 70)
+                logger.info("[Phase 7] Second-Order (Stored) SQL Injection Detection (AGGRESSIVE)")
+                logger.info("=" * 70)
+                try:
+                    sigma_s2_det = SecondOrderDetector(self.config, lambda_http)
+                    sigma_s2_findings = sigma_s2_det.scan(alpha_urls_parsed, psi_forms)
+                    omicron_findings.extend(sigma_s2_findings)
+                    logger.info(f"  - Vulnerabilities found: {len(sigma_s2_findings)}")
+                except Exception as _se:
+                    logger.warning(f"Second-order detection failed: {_se}")
+                    sigma_s2_findings = []
+            else:
+                logger.info("\n" + "=" * 70)
+                logger.info("[Phase 7] Second-Order Detection SKIPPED (safe mode)")
+                logger.info("Use --aggressive flag to enable second-order detection")
+                logger.info("=" * 70)
+
             logger.info("\n" + "=" * 70)
             logger.info("DEDUPLICATION")
             logger.info("=" * 70)
@@ -811,14 +901,92 @@ class SQLInjectionScanner:
             logger.info(f"Findings before deduplication: {tau_findings_before}")
             
             omicron_findings = self.deduplicate_findings(omicron_findings)
-            
+
             upsilon_findings_after = len(omicron_findings)
             phi_duplicates = tau_findings_before - upsilon_findings_after
-            
+
             logger.info(f"Findings after deduplication: {upsilon_findings_after}")
             logger.info(f"Duplicates removed: {phi_duplicates}")
             logger.info("=" * 70)
+
+            # ================================================================
+            # CONTEXTUAL RISK SCORING
+            # ================================================================
+            if omicron_findings:
+                logger.info("\n" + "=" * 70)
+                logger.info("CONTEXTUAL RISK SCORING")
+                logger.info("=" * 70)
+                omicron_findings = enrich_findings_with_risk(
+                    omicron_findings,
+                    target_url=target,
+                )
+                scored_above_base = sum(
+                    1 for f in omicron_findings
+                    if f.get('contextual_score', 9.8) > 9.8
+                )
+                logger.info(
+                    f"Risk scoring complete: "
+                    f"{scored_above_base}/{len(omicron_findings)} findings "
+                    f"scored above base (9.8)"
+                )
             
+            # ================================================================
+            # NORMALIZE FINDING FIELDS
+            # Promote evidence.parameter / evidence.method to top-level fields
+            # and resolve Unknown DBMS using cross-finding DBMS info.
+            # ================================================================
+            _dbms_codes = {
+                'MySQL': 'PYTHIA-SQL-001', 'MariaDB': 'PYTHIA-SQL-001',
+                'PostgreSQL': 'PYTHIA-SQL-002',
+                'Microsoft SQL Server': 'PYTHIA-SQL-003', 'MSSQL': 'PYTHIA-SQL-003',
+                'Oracle': 'PYTHIA-SQL-004',
+                'SQLite': 'PYTHIA-SQL-005',
+                'IBM Db2': 'PYTHIA-SQL-006',
+                'SAP HANA': 'PYTHIA-SQL-007',
+            }
+            # Build a map: (base_path, param) → known dbms (strip query params for matching)
+            def _base_path(u: str) -> str:
+                p = urlparse(u)
+                return f"{p.scheme}://{p.netloc}{p.path}"
+
+            _known_dbms: Dict = {}
+            for _f in omicron_findings:
+                _fd = _f.get('dbms') or _f.get('evidence', {}).get('dbms', '')
+                if _fd and _fd != 'Unknown':
+                    _fbase = _base_path(_f.get('evidence', {}).get('url', ''))
+                    _fparam = _f.get('parameter') or _f.get('evidence', {}).get('parameter', '')
+                    if _fbase and _fparam:
+                        _known_dbms[(_fbase, _fparam)] = _fd
+            for _f in omicron_findings:
+                ev = _f.get('evidence', {})
+                # Promote parameter / vector to top-level
+                if not _f.get('parameter'):
+                    _f['parameter'] = ev.get('parameter', '')
+                if not _f.get('vector'):
+                    _f['vector'] = ev.get('method', '')
+                # Resolve Unknown / missing DBMS + fix finding code
+                if not _f.get('dbms') or _f.get('dbms') == 'Unknown':
+                    _fbase = _base_path(ev.get('url', ''))
+                    _fparam = _f.get('parameter', '')
+                    _resolved = _known_dbms.get((_fbase, _fparam), '')
+                    if _resolved:
+                        _f['dbms'] = _resolved
+                        ev['dbms'] = _resolved
+                        if _f.get('detection_method') == 'error-based' and _f.get('id') == 'PYTHIA-SQL-000':
+                            _f['id'] = _dbms_codes.get(_resolved, 'PYTHIA-SQL-001')
+                # Set base CVSS score (9.8 for CWE-89 SQL Injection)
+                if _f.get('cvss') is None:
+                    _f['cvss'] = 9.8
+                # Promote payload to top-level from evidence (varies by detection method)
+                if not _f.get('payload'):
+                    _f['payload'] = (
+                        ev.get('payload') or
+                        ev.get('true_payload') or          # boolean-blind
+                        ev.get('union_payload_example') or # union-based
+                        ev.get('injected_payload') or
+                        ''
+                    )
+
             # ================================================================
             # FINALIZE SCAN
             # ================================================================
@@ -851,7 +1019,11 @@ class SQLInjectionScanner:
                 target=target,
                 mode=mode,
                 use_ai=use_ai,
-                ai_tone=ai_tone
+                ai_tone=ai_tone,
+                compare_providers=compare_providers,
+                use_agent=use_agent,
+                diff_ref=diff_ref,
+                sarif=sarif,
             )
             
             logger.info(f"Reports generated:")
@@ -917,11 +1089,15 @@ class SQLInjectionScanner:
         target: str,
         mode: str,
         use_ai: bool = False,
-        ai_tone: Optional[str] = None
+        ai_tone: Optional[str] = None,
+        compare_providers: Optional[List[Dict]] = None,
+        use_agent: bool = False,
+        diff_ref: Optional[str] = None,
+        sarif: bool = False,
     ) -> Dict:
         """
-        Generate reports, save to DB, and optionally run AI analysis.
-        
+        Generate reports, save to DB, optionally run AI analysis and diff.
+
         Args:
             scan_id: Database scan ID
             findings: List of all findings
@@ -932,7 +1108,11 @@ class SQLInjectionScanner:
             mode: Scan mode
             use_ai: Whether to run AI analysis
             ai_tone: AI tone (technical/non_technical/both)
-        
+            compare_providers: List of {provider, model} for --ai-compare
+            use_agent: Use AI agent with NVD tools
+            diff_ref: Reference scan ID or "last" for --diff
+            sarif: Output SARIF to stdout
+
         Returns:
             Result summary dictionary
         """
@@ -952,6 +1132,22 @@ class SQLInjectionScanner:
                     'verified_at': gamma_latest['verified_at']
                 }
         
+        # Enrich findings with OWASP + CWE mappings
+        try:
+            from .core.owasp import enrich_findings_with_owasp
+            findings = enrich_findings_with_owasp(findings)
+            logger.debug("Findings enriched with OWASP/CWE mappings")
+        except Exception as _owasp_err:
+            logger.warning(f"OWASP enrichment failed: {_owasp_err}")
+
+        # Enrich findings with CVE data from NVD (per detected DBMS)
+        try:
+            from .core.cve_lookup import enrich_sqli_findings
+            enrich_sqli_findings(findings)
+            logger.debug("Findings enriched with CVE data from NVD")
+        except Exception as _cve_err:
+            logger.warning(f"CVE enrichment failed: {_cve_err}")
+
         # Create report
         delta_report = self.report_gen.create_report(
             tool='pythia',
@@ -962,19 +1158,54 @@ class SQLInjectionScanner:
             requests_sent=requests_count,
             consent=alpha_consent
         )
-        
+
+        # Compute diff if requested
+        diff_data = None
+        if diff_ref:
+            try:
+                from .core.diff import compute_diff
+                diff_data = compute_diff(
+                    db=self.db,
+                    current_scan_id=scan_id,
+                    ref_scan_id_or_last=diff_ref,
+                    domain=omega_domain,
+                    current_findings=findings,   # pass directly — not yet in DB
+                )
+                if diff_data:
+                    delta_report['diff'] = diff_data
+                    logger.info(
+                        f"Diff computed: {len(diff_data.get('new', []))} new, "
+                        f"{len(diff_data.get('fixed', []))} fixed, "
+                        f"{len(diff_data.get('persisting', []))} persisting"
+                    )
+            except Exception as _diff_err:
+                logger.warning(f"Diff computation failed: {_diff_err}")
+
         # Run AI analysis if enabled
         if use_ai:
             logger.info("\n[AI Analysis] Generating insights...")
             try:
-                epsilon_ai = analyze_report(delta_report, tone=ai_tone, config=self.config)
-                
+                epsilon_ai = analyze_report(
+                    delta_report,
+                    tone=ai_tone,
+                    config=self.config,
+                    scan_id=scan_id,
+                    compare_providers=compare_providers,
+                    use_agent=use_agent,
+                )
                 if epsilon_ai:
                     delta_report['ai_analysis'] = epsilon_ai
-                    logger.info("✓ AI analysis completed")
-            
+                    logger.info("AI analysis completed")
+
             except Exception as zeta_err:
                 logger.error(f"AI analysis failed: {zeta_err}")
+
+        # SARIF output (writes to stdout)
+        if sarif:
+            try:
+                self._output_sarif(delta_report)
+            except Exception as _sarif_err:
+                logger.warning(f"SARIF output failed: {_sarif_err}")
         
         # Save JSON report
         eta_json = self.report_gen.save_json(delta_report)
@@ -1014,16 +1245,97 @@ class SQLInjectionScanner:
         )
         
         return {
-            'scan_id': scan_id,
-            'status': status,
+            'scan_id':       scan_id,
+            'status':        status,
             'findings_count': len(findings),
-            'summary': lambda_summary,
-            'duration': psi_duration,
+            'summary':       lambda_summary,
+            'duration':      psi_duration,
             'requests_sent': requests_count,
-            'report_json': str(eta_json),
-            'report_html': str(theta_html) if theta_html else None,
-            'ai_analysis': bool(delta_report.get('ai_analysis'))
+            'report_json':   str(eta_json),
+            'report_html':   str(theta_html) if theta_html else None,
+            'ai_analysis':   bool(delta_report.get('ai_analysis')),
+            'diff':          diff_data,
         }
+
+    def _output_sarif(self, report: Dict):
+        """
+        Output SARIF 2.1.0 JSON to stdout for GitHub/GitLab SAST integration.
+        """
+        import json as _json
+
+        rules = []
+        results = []
+
+        seen_rules = set()
+        for finding in report.get('findings', []):
+            rule_id = finding.get('id', 'PYTHIA-SQL-000')
+            if rule_id not in seen_rules:
+                seen_rules.add(rule_id)
+                owasp = finding.get('owasp', {})
+                cwe   = finding.get('cwe', {})
+                rules.append({
+                    'id':               rule_id,
+                    'name':             finding.get('title', rule_id),
+                    'shortDescription': {'text': finding.get('title', '')},
+                    'fullDescription':  {'text': finding.get('description', '')},
+                    'helpUri':          'https://owasp.org/www-community/attacks/SQL_Injection',
+                    'properties': {
+                        'tags': [
+                            owasp.get('id', 'A03'),
+                            cwe.get('id', 'CWE-89'),
+                            'security',
+                            'sql-injection',
+                        ]
+                    },
+                })
+
+            # Map severity to SARIF level
+            sev_map = {
+                'critical': 'error',
+                'high':     'error',
+                'medium':   'warning',
+                'low':      'note',
+                'info':     'note',
+            }
+            level = sev_map.get(finding.get('severity', 'info'), 'warning')
+
+            results.append({
+                'ruleId':  rule_id,
+                'level':   level,
+                'message': {'text': finding.get('description', finding.get('title', ''))},
+                'locations': [{
+                    'physicalLocation': {
+                        'artifactLocation': {
+                            'uri': finding.get('evidence', {}).get('url', report.get('target', ''))
+                        }
+                    }
+                }],
+                'properties': {
+                    'parameter':        finding.get('parameter', ''),
+                    'payload':          finding.get('payload', ''),
+                    'dbms':             finding.get('dbms', ''),
+                    'detection_method': finding.get('detection_method', ''),
+                    'confidence':       finding.get('confidence', 'medium'),
+                }
+            })
+
+        sarif = {
+            'version': '2.1.0',
+            '$schema': 'https://json.schemastore.org/sarif-2.1.0.json',
+            'runs': [{
+                'tool': {
+                    'driver': {
+                        'name':            'Pythia',
+                        'version':         report.get('version', '0.2.0'),
+                        'informationUri':  'https://github.com/rodhnin/pythia-sql-clairvoyance',
+                        'rules':           rules,
+                    }
+                },
+                'results': results,
+            }]
+        }
+
+        print(_json.dumps(sarif, indent=2))
 
 
 if __name__ == "__main__":

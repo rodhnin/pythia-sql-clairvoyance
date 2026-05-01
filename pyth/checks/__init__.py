@@ -3,17 +3,6 @@
 # ------------------------
 # SQL Injection detection modules initialization.
 # ============================================================================
-"""
-SQL Injection Detection Modules for Pythia.
-
-Available detectors:
-- ErrorBasedDetector: Detects SQLi via database error messages
-- BooleanBlindDetector: Detects blind SQLi via response differences
-- TimeBasedDetector: Detects blind SQLi via time delays (AGGRESSIVE)
-- UnionBasedDetector: Detects SQLi via UNION SELECT queries (AGGRESSIVE)
-- FormTester: HTML form parser and tester
-- WebCrawler: Intelligent web crawler for discovering attack surfaces
-"""
 
 from .error_based import ErrorBasedDetector
 from .boolean_blind import BooleanBlindDetector

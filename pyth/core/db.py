@@ -584,6 +584,69 @@ class Database:
                 return scan
             return None
     
+    def list_scans(
+        self,
+        tool: Optional[str] = None,
+        domain: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        List recent scans with optional filters.
+        Used by diff.py for --diff last lookup.
+
+        Args:
+            tool: Filter by tool name (e.g., 'pythia')
+            domain: Filter by domain
+            limit: Maximum number of results
+
+        Returns:
+            List of scan dicts ordered by started_at DESC
+        """
+        query  = "SELECT * FROM scans WHERE 1=1"
+        params = []
+
+        if tool:
+            query += " AND tool = ?"
+            params.append(tool)
+
+        if domain:
+            normalized = self._normalize_domain(domain)
+            query += " AND domain = ?"
+            params.append(normalized)
+
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+        scans = []
+        for row in rows:
+            scan = dict(row)
+            if scan.get('summary'):
+                try:
+                    scan['summary'] = json.loads(scan['summary'])
+                except json.JSONDecodeError:
+                    scan['summary'] = None
+            scans.append(scan)
+
+        return scans
+
+    def get_findings(self, scan_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all findings for a scan.
+        Alias for get_findings_by_scan() — used by diff.py.
+
+        Args:
+            scan_id: Scan ID
+
+        Returns:
+            List of finding dicts ordered by severity
+        """
+        return self.get_findings_by_scan(scan_id)
+
     def get_recent_scans(self, tool: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
         """
         Get recent scans, optionally filtered by tool.
@@ -737,6 +800,68 @@ class Database:
             
             return findings
     
+    # ========================================================================
+    # AI COST TRACKING (IMPROV-005)
+    # ========================================================================
+
+    def save_ai_cost(
+        self,
+        scan_id: Optional[int],
+        provider: str,
+        model: str,
+        analysis_type: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float,
+        duration_s: Optional[float] = None
+    ) -> Optional[int]:
+        """
+        Save an AI analysis cost record.
+
+        Args:
+            scan_id: Associated scan ID (may be None for standalone analysis)
+            provider: LLM provider (openai, anthropic, ollama)
+            model: Model identifier
+            analysis_type: Type of analysis (technical, non_technical, agent, compare)
+            input_tokens: Prompt tokens consumed
+            output_tokens: Completion tokens generated
+            cost_usd: Total cost in USD
+            duration_s: Analysis duration in seconds
+
+        Returns:
+            cost_id if saved, None if read-only mode
+        """
+        if self.readonly_mode:
+            return None
+
+        total_tokens = input_tokens + output_tokens
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO ai_costs
+                    (scan_id, provider, model, analysis_type,
+                     input_tokens, output_tokens, total_tokens, cost_usd, duration_s)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (scan_id, provider, model, analysis_type,
+                 input_tokens, output_tokens, total_tokens,
+                 round(cost_usd, 6), duration_s)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_ai_costs(self, scan_id: int) -> List[Dict[str, Any]]:
+        """Get all AI cost records for a scan."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM ai_costs WHERE scan_id = ? ORDER BY created_at",
+                (scan_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
     def get_critical_findings(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Get recent critical and high severity findings across all scans.

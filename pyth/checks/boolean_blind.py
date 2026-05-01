@@ -3,6 +3,8 @@ Pythia Boolean Blind SQL Injection Detection
 ============================================================
 Detects blind SQL injection by comparing responses to true vs false conditions.
 
+v0.2.0: WAF bypass variants added for aggressive mode (30+ payload pairs).
+
 Author: Rodney Dhavid Jimenez Chacin (rodhnin)
 License: MIT
 """
@@ -13,6 +15,10 @@ from difflib import SequenceMatcher
 from urllib.parse import urlparse, urlunparse, urlencode
 from ..core.logging import get_logger
 from ..core.config import get_config
+from .waf_bypass import (
+    BOOLEAN_BLIND_PAYLOADS_AGGRESSIVE_TRUE,
+    BOOLEAN_BLIND_PAYLOADS_AGGRESSIVE_FALSE,
+)
 
 logger = get_logger(__name__)
 
@@ -42,15 +48,21 @@ class BooleanBlindDetector:
         self.form_tester = FormTester(config, http_client, auto_csrf)
         logger.debug("FormTester imported for URL merging support")
         
-        # Load payloads from config
-        if hasattr(config, 'sqli_boolean_payloads'):
+        # Determine mode
+        self.aggressive = getattr(config, 'mode', 'safe') == 'aggressive'
+
+        # Load payloads — aggressive mode uses expanded set with WAF bypass variants
+        if self.aggressive:
+            self.true_payloads = BOOLEAN_BLIND_PAYLOADS_AGGRESSIVE_TRUE
+            self.false_payloads = BOOLEAN_BLIND_PAYLOADS_AGGRESSIVE_FALSE
+        elif hasattr(config, 'sqli_boolean_payloads'):
             payload_config = config.sqli_boolean_payloads
             self.true_payloads = payload_config.get('true', [])
             self.false_payloads = payload_config.get('false', [])
         else:
             self.true_payloads = self._get_default_true_payloads()
             self.false_payloads = self._get_default_false_payloads()
-        
+
         # Confidence thresholds from config
         if hasattr(config, 'sqli_boolean_blind'):
             blind_config = config.sqli_boolean_blind
@@ -63,8 +75,8 @@ class BooleanBlindDetector:
             self.high_confidence_diff = 1000
             self.medium_confidence_diff = 500
             self.min_consistent_results = 2
-        
-        logger.info(f"Boolean blind detector initialized")
+
+        logger.info(f"Boolean blind detector initialized ({'aggressive' if self.aggressive else 'safe'} mode)")
         logger.info(f"  TRUE payloads: {len(self.true_payloads)}")
         logger.info(f"  FALSE payloads: {len(self.false_payloads)}")
         logger.info(f"  Min length diff: {self.min_length_diff} bytes")
@@ -182,7 +194,10 @@ class BooleanBlindDetector:
         
         is_significant_diff = (
             length_diff_true_false >= self.min_length_diff or
-            (relative_diff_true_false_pct >= 5.0 and length_diff_true_false >= 50)
+            (relative_diff_true_false_pct >= 5.0 and length_diff_true_false >= 50) or
+            # Small but real diff: ≥1% relative AND ≥20 bytes absolute
+            # Catches apps that return minimal data (e.g. DVWA returns 1 DB row = ~70 bytes)
+            (relative_diff_true_false_pct >= 1.0 and length_diff_true_false >= 20)
         )
         
         if is_significant_diff:
@@ -525,22 +540,29 @@ class BooleanBlindDetector:
         true_visible = extract_visible_text(true_text)
         false_visible = extract_visible_text(false_text)
         
-        # Method 1: Check for different keywords in TRUE vs FALSE
-        # Common SQLi Blind patterns
+        # Method 1: Check for EXCLUSIVE keywords in TRUE vs FALSE
+        # Keywords must be present in one side AND absent from the other AND absent from baseline.
+        # This prevents false positives on pages that always contain common words
+        # (e.g., documentation pages with "found", "error" in normal text).
         positive_keywords = ['exists', 'found', 'success', 'valid', 'correct', 'true', 'yes']
         negative_keywords = ['missing', 'not found', 'error', 'invalid', 'incorrect', 'false', 'no', 'failed']
-        
-        true_has_positive = any(kw in true_visible for kw in positive_keywords)
-        false_has_negative = any(kw in false_visible for kw in negative_keywords)
-        
-        if true_has_positive and false_has_negative:
-            # TRUE shows positive keyword, FALSE shows negative keyword
-            # This is classic Boolean Blind SQLi pattern
+
+        exclusive_true_kw = [
+            kw for kw in positive_keywords
+            if kw in true_visible and kw not in false_visible and kw not in baseline_visible
+        ]
+        exclusive_false_kw = [
+            kw for kw in negative_keywords
+            if kw in false_visible and kw not in true_visible and kw not in baseline_visible
+        ]
+
+        if exclusive_true_kw and exclusive_false_kw:
+            # Keyword appears exclusively on one side — strong Boolean Blind signal
             details['pattern'] = 'keyword_difference'
-            details['true_keywords'] = [kw for kw in positive_keywords if kw in true_visible]
-            details['false_keywords'] = [kw for kw in negative_keywords if kw in false_visible]
-            
-            logger.debug(f"  ✓ Content pattern: TRUE has {details['true_keywords']}, FALSE has {details['false_keywords']}")
+            details['true_keywords'] = exclusive_true_kw
+            details['false_keywords'] = exclusive_false_kw
+
+            logger.debug(f"  ✓ Exclusive keyword pattern: TRUE-only={exclusive_true_kw}, FALSE-only={exclusive_false_kw}")
             return True, 'keyword_difference', details
         
         # Method 2: Check visible text length difference
@@ -1076,29 +1098,60 @@ class BooleanBlindDetector:
             logger.debug(f"    Field '{field_name}' has no value, using default '1'")
         
         logger.debug(f"    Testing form field: {field_name}={field_value}")
-        
+
+        # Session-variable pattern: form stores value in session; actual SQL result
+        # appears on a different (parent) page.  Use POST→GET chain when parent_url set.
+        parent_url = form.get('parent_url', '')
+        is_session_var = bool(parent_url and parent_url != form.get('action', ''))
+
+        if is_session_var:
+            logger.info(
+                f"    [SESSION-VAR] boolean-blind via POST→GET chain: "
+                f"action={form['action']} parent={parent_url}"
+            )
+
+        def _submit_and_observe(form_data: dict):
+            """Submit form, return the page where SQL result appears."""
+            if form['method'].upper() == 'POST':
+                self.http.post(form['action'], data=form_data)
+            else:
+                self.http.get(form['action'], params=form_data)
+            if is_session_var:
+                return self.http.get(parent_url)
+            # Non-session-var: response IS the form submission response
+            if form['method'].upper() == 'POST':
+                return self.http.post(form['action'], data=form_data)
+            return self.http.get(form['action'], params=form_data)
+
         # Step 1: Get baseline response
         try:
             baseline_form_data = all_form_data.copy()
             baseline_form_data[field_name] = field_value
-            
+
             # Refresh CSRF if enabled
             csrf_token = None
             if self.auto_csrf:
                 csrf_token = form_tester._refresh_form_and_extract_csrf(form['action'])
                 if csrf_token:
                     baseline_form_data[csrf_token['name']] = csrf_token['value']
-            
-            if form['method'].upper() == 'POST':
+
+            if is_session_var:
+                # POST then GET parent to get the observed response
+                if form['method'].upper() == 'POST':
+                    self.http.post(form['action'], data=baseline_form_data)
+                else:
+                    self.http.get(form['action'], params=baseline_form_data)
+                baseline_response = self.http.get(parent_url)
+            elif form['method'].upper() == 'POST':
                 baseline_response = self.http.post(form['action'], data=baseline_form_data)
             else:
                 baseline_response = self.http.get(form['action'], params=baseline_form_data)
-        
+
         except Exception as e:
             logger.error(f"Failed to get baseline for form field {field_name}: {e}")
             return findings
-        
-        # Reject if baseline was redirected
+
+        # Reject if baseline was redirected (session expired / auth required)
         if baseline_response.history:
             redirect_status = baseline_response.history[0].status_code
             logger.warning(
@@ -1106,7 +1159,7 @@ class BooleanBlindDetector:
                 f"- skipping boolean blind test on form field '{field_name}'"
             )
             return findings  # Skip this field
-        
+
         # Also check if baseline is an error page (4xx, 5xx)
         if baseline_response.status_code >= 400:
             logger.warning(
@@ -1114,66 +1167,84 @@ class BooleanBlindDetector:
                 f"- skipping boolean blind test on form field '{field_name}'"
             )
             return findings  # Skip this field
-        
+
         # Step 2: Test with invalid non-SQL input
         invalid_response = None
         has_input_validation = False
-        
+
         try:
             invalid_form_data = all_form_data.copy()
             invalid_form_data[field_name] = "abc!@#$%^&*()"
-            
+
             if self.auto_csrf:
                 csrf_token = form_tester._refresh_form_and_extract_csrf(form['action'])
                 if csrf_token:
                     invalid_form_data[csrf_token['name']] = csrf_token['value']
-            
-            if form['method'].upper() == 'POST':
+
+            if is_session_var:
+                if form['method'].upper() == 'POST':
+                    self.http.post(form['action'], data=invalid_form_data)
+                else:
+                    self.http.get(form['action'], params=invalid_form_data)
+                invalid_response = self.http.get(parent_url)
+            elif form['method'].upper() == 'POST':
                 invalid_response = self.http.post(form['action'], data=invalid_form_data)
             else:
                 invalid_response = self.http.get(form['action'], params=invalid_form_data)
-            
+
             has_input_validation = (
                 invalid_response.status_code != baseline_response.status_code or
                 abs(len(invalid_response.text) - len(baseline_response.text)) > 500
             )
-        
+
         except Exception as e:
             logger.debug(f"Invalid input test failed: {e}")
-        
+
         # Step 3: Test payload pairs
         detections = []
-        
+
         for true_payload, false_payload in zip(self.true_payloads, self.false_payloads):
             try:
                 # Test TRUE condition
                 true_form_data = all_form_data.copy()
                 true_form_data[field_name] = f"{field_value}{true_payload}"
-                
+
                 if self.auto_csrf:
                     csrf_token = form_tester._refresh_form_and_extract_csrf(form['action'])
                     if csrf_token:
                         true_form_data[csrf_token['name']] = csrf_token['value']
-                
-                if form['method'].upper() == 'POST':
+
+                if is_session_var:
+                    if form['method'].upper() == 'POST':
+                        self.http.post(form['action'], data=true_form_data)
+                    else:
+                        self.http.get(form['action'], params=true_form_data)
+                    true_response = self.http.get(parent_url)
+                elif form['method'].upper() == 'POST':
                     true_response = self.http.post(form['action'], data=true_form_data)
                 else:
                     true_response = self.http.get(form['action'], params=true_form_data)
-                
+
                 # Test FALSE condition
                 false_form_data = all_form_data.copy()
                 false_form_data[field_name] = f"{field_value}{false_payload}"
-                
+
                 if self.auto_csrf:
                     csrf_token = form_tester._refresh_form_and_extract_csrf(form['action'])
                     if csrf_token:
                         false_form_data[csrf_token['name']] = csrf_token['value']
-                
-                if form['method'].upper() == 'POST':
+
+                if is_session_var:
+                    if form['method'].upper() == 'POST':
+                        self.http.post(form['action'], data=false_form_data)
+                    else:
+                        self.http.get(form['action'], params=false_form_data)
+                    false_response = self.http.get(parent_url)
+                elif form['method'].upper() == 'POST':
                     false_response = self.http.post(form['action'], data=false_form_data)
                 else:
                     false_response = self.http.get(form['action'], params=false_form_data)
-                
+
                 # Compare responses
                 is_vulnerable, confidence, details = self.compare_responses(
                     baseline_response,

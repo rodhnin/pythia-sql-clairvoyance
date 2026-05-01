@@ -24,11 +24,7 @@
             --border: #e3e8ff;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -48,9 +44,9 @@
             border: 2px solid var(--border);
         }
 
-        /* ============================================================================
-           HEADER - PYTHIA ORACLE
-           ============================================================================ */
+        /* ============================================================
+           HEADER
+           ============================================================ */
         header {
             background: linear-gradient(135deg, var(--pythia-purple) 0%, var(--pythia-deep) 50%, var(--pythia-blue) 100%);
             color: white;
@@ -58,534 +54,220 @@
             position: relative;
             overflow: hidden;
         }
-        /* Mystic pattern background */
         header::before {
             content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
             background-image:
-                    repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.03) 20px, rgba(255,255,255,0.03) 40px),
-                    radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12) 0, transparent 50%),
-                    radial-gradient(circle at 80% 80%, rgba(255,255,255,0.12) 0, transparent 50%);
+                repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.03) 20px, rgba(255,255,255,0.03) 40px),
+                radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12) 0, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255,255,255,0.12) 0, transparent 50%);
             opacity: 0.4;
         }
         header::after {
             content: '🔮';
-            position: absolute;
-            top: 20px;
-            right: 50px;
-            font-size: 80px;
-            opacity: 0.2;
-            transform: rotate(10deg);
+            position: absolute; top: 20px; right: 50px;
+            font-size: 80px; opacity: 0.2; transform: rotate(10deg);
         }
-        .logo {
-            font-size: 60px;
-            margin-bottom: 10px;
-            text-shadow: 3px 3px 8px rgba(0,0,0,0.4);
-            position: relative;
-            z-index: 1;
-        }
-        header h1 {
-            font-size: 42px;
-            margin-bottom: 15px;
-            font-weight: 800;
-            text-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-            letter-spacing: 1px;
-            position: relative;
-            z-index: 1;
-        }
-        .subtitle {
-            font-size: 18px;
-            opacity: 0.95;
-            font-weight: 400;
-            margin-bottom: 8px;
-            position: relative;
-            z-index: 1;
-        }
-        .tagline {
-            font-size: 14px;
-            opacity: 0.85;
-            font-style: italic;
-            color: rgba(255, 255, 255, 0.9);
-            position: relative;
-            z-index: 1;
-        }
-        .meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 25px;
-            margin-top: 25px;
-            font-size: 14px;
-            opacity: 0.95;
-            position: relative;
-            z-index: 1;
-        }
-        .meta-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .meta-item strong {
-            font-weight: 600;
-        }
-
-        /* Summary Pills */
-        .summary-pills {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin-top: 25px;
-            position: relative;
-            z-index: 1;
-        }
-        .pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 10px 18px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 700;
-            color: white;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .pill:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        }
+        .logo { font-size: 60px; margin-bottom: 10px; text-shadow: 3px 3px 8px rgba(0,0,0,0.4); position: relative; z-index: 1; }
+        header h1 { font-size: 42px; margin-bottom: 15px; font-weight: 800; text-shadow: 2px 2px 6px rgba(0,0,0,0.3); letter-spacing: 1px; position: relative; z-index: 1; }
+        .subtitle { font-size: 18px; opacity: 0.95; font-weight: 400; margin-bottom: 8px; position: relative; z-index: 1; }
+        .tagline { font-size: 14px; opacity: 0.85; font-style: italic; color: rgba(255,255,255,0.9); position: relative; z-index: 1; }
+        .meta { display: flex; flex-wrap: wrap; gap: 25px; margin-top: 25px; font-size: 14px; opacity: 0.95; position: relative; z-index: 1; }
+        .meta-item { display: flex; align-items: center; gap: 8px; }
+        .meta-item strong { font-weight: 600; }
+        .summary-pills { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 25px; position: relative; z-index: 1; }
+        .pill { display: inline-flex; align-items: center; padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 700; color: white; box-shadow: 0 3px 10px rgba(0,0,0,0.2); transition: transform 0.2s, box-shadow 0.2s; }
+        .pill:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .pill-critical { background: var(--critical); }
         .pill-high { background: var(--high); }
         .pill-medium { background: var(--medium); color: #333; }
         .pill-low { background: var(--low); }
         .pill-info { background: var(--info); }
 
-        /* ============================================================================
+        /* ============================================================
            CONTENT
-           ============================================================================ */
-        .content {
-            padding: 50px;
-        }
-        section {
-            margin-bottom: 50px;
-        }
-        h2 {
-            font-size: 28px;
-            color: var(--pythia-purple);
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 3px solid var(--border);
-            position: relative;
-        }
-        h2::before {
-            content: '';
-            position: absolute;
-            bottom: -3px;
-            left: 0;
-            width: 120px;
-            height: 3px;
-            background: var(--pythia-purple);
-        }
+           ============================================================ */
+        .content { padding: 50px; }
+        section { margin-bottom: 50px; }
+        h2 { font-size: 28px; color: var(--pythia-purple); margin-bottom: 25px; padding-bottom: 15px; border-bottom: 3px solid var(--border); position: relative; }
+        h2::before { content: ''; position: absolute; bottom: -3px; left: 0; width: 120px; height: 3px; background: var(--pythia-purple); }
 
-        /* ============================================================================
-           OVERVIEW SECTION
-           ============================================================================ */
+        /* ============================================================
+           OVERVIEW
+           ============================================================ */
         .overview {
             background: linear-gradient(135deg, var(--bg-light) 0%, #e3e8ff 100%);
-            border-radius: 8px;
-            padding: 30px;
-            margin-bottom: 40px;
+            border-radius: 8px; padding: 30px; margin-bottom: 40px;
             border-left: 5px solid var(--pythia-purple);
-            box-shadow: 0 2px 10px rgba(106, 17, 203, 0.1);
+            box-shadow: 0 2px 10px rgba(106,17,203,0.1);
         }
-        .overview-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .overview-item {
-            background: white;
-            padding: 20px;
-            border-radius: 6px;
-            border-left: 3px solid var(--pythia-deep);
-            box-shadow: 0 1px 5px rgba(0,0,0,0.05);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .overview-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 3px 12px rgba(0,0,0,0.1);
-        }
-        .overview-item label {
-            font-size: 12px;
-            color: var(--text-light);
-            text-transform: uppercase;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-        .overview-item .value {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--pythia-purple);
-            margin-top: 8px;
-        }
+        .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
+        .overview-item { background: white; padding: 20px; border-radius: 6px; border-left: 3px solid var(--pythia-deep); box-shadow: 0 1px 5px rgba(0,0,0,0.05); transition: transform 0.2s, box-shadow 0.2s; }
+        .overview-item:hover { transform: translateY(-2px); box-shadow: 0 3px 12px rgba(0,0,0,0.1); }
+        .overview-item label { font-size: 12px; color: var(--text-light); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        .overview-item .value { font-size: 20px; font-weight: 700; color: var(--pythia-purple); margin-top: 8px; }
 
-        /* ============================================================================
-           AI ANALYSIS SECTION - WITH DYNAMIC TABS (como Argus)
-           ============================================================================ */
+        /* ============================================================
+           AI ANALYSIS — TABS (standard / agent / compare)
+           ============================================================ */
         .ai-analysis {
             background: linear-gradient(135deg, #fff 0%, var(--bg-light) 100%);
-            border-radius: 8px;
-            padding: 35px;
-            margin-bottom: 40px;
+            border-radius: 8px; padding: 35px; margin-bottom: 40px;
             border-left: 5px solid var(--pythia-deep);
-            box-shadow: 0 2px 10px rgba(106, 17, 203, 0.15);
+            box-shadow: 0 2px 10px rgba(106,17,203,0.15);
         }
-        .ai-analysis h2 {
-            color: var(--pythia-deep);
-        }
-        .ai-tabs {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 25px;
-            border-bottom: 3px solid var(--border);
-        }
-        .ai-tab {
-            padding: 12px 24px;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            font-weight: 700;
-            color: var(--text-light);
-            transition: all 0.3s;
-            border-bottom: 3px solid transparent;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .ai-tab:hover {
-            color: var(--pythia-purple);
-        }
-        .ai-tab.active {
-            color: var(--pythia-purple);
-            border-bottom-color: var(--pythia-purple);
-        }
-        .ai-content {
-            display: none;
-            padding: 25px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .ai-content.active {
-            display: block;
-        }
+        .ai-analysis h2 { color: var(--pythia-deep); }
+        .ai-tabs { display: flex; gap: 15px; margin-bottom: 25px; border-bottom: 3px solid var(--border); }
+        .ai-tab { padding: 12px 24px; background: transparent; border: none; cursor: pointer; font-weight: 700; color: var(--text-light); transition: all 0.3s; border-bottom: 3px solid transparent; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .ai-tab:hover { color: var(--pythia-purple); }
+        .ai-tab.active { color: var(--pythia-purple); border-bottom-color: var(--pythia-purple); }
+        .ai-content { display: none; padding: 25px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .ai-content.active { display: block; }
+        .ai-content h3 { color: var(--pythia-blue); margin-top: 25px; margin-bottom: 15px; font-size: 20px; }
+        .ai-content h4 { color: var(--pythia-purple); margin-top: 20px; margin-bottom: 12px; font-size: 17px; font-weight: 600; }
+        .ai-content h5 { color: var(--pythia-blue); margin-top: 15px; margin-bottom: 10px; font-size: 15px; font-weight: 600; }
+        .ai-content p { margin-bottom: 15px; line-height: 1.8; }
+        .ai-content ul, .ai-content ol { margin-left: 30px; margin-top: 12px; margin-bottom: 15px; }
+        .ai-content li { margin-bottom: 10px; line-height: 1.7; }
+        .ai-content strong { color: var(--pythia-blue); font-weight: 700; }
+        .ai-content code { background: var(--bg-light); padding: 3px 8px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 13px; color: var(--pythia-blue); border: 1px solid var(--border); }
+        .ai-content pre { background: var(--text-dark); color: #f9fafb; padding: 20px; border-radius: 8px; overflow-x: auto; margin: 20px 0; border-left: 4px solid var(--pythia-purple); box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .ai-content pre code { background: none; color: #f9fafb; padding: 0; border: none; }
+        .ai-content blockquote { border-left: 4px solid var(--pythia-purple); padding: 15px 20px; margin: 20px 0; color: var(--text-light); font-style: italic; background: var(--bg-light); border-radius: 4px; }
+        .ai-content table { width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .ai-content table th, .ai-content table td { border: 1px solid var(--border); padding: 12px; text-align: left; }
+        .ai-content table th { background: var(--bg-light); font-weight: 700; color: var(--pythia-blue); }
+        .ai-meta { margin-top: 25px; padding-top: 20px; border-top: 2px solid var(--border); font-size: 13px; color: var(--text-light); text-align: right; font-style: italic; }
 
-        /* Markdown styling in AI content */
-        .ai-content h3 {
-            color: var(--pythia-blue);
-            margin-top: 25px;
-            margin-bottom: 15px;
-            font-size: 20px;
-        }
-        .ai-content h4 {
-            color: var(--pythia-purple);
-            margin-top: 20px;
-            margin-bottom: 12px;
-            font-size: 17px;
-            font-weight: 600;
-        }
-        .ai-content h5 {
-            color: var(--pythia-blue);
-            margin-top: 15px;
-            margin-bottom: 10px;
-            font-size: 15px;
-            font-weight: 600;
-        }
-        .ai-content p {
-            margin-bottom: 15px;
-            line-height: 1.8;
-        }
-        .ai-content ul,
-        .ai-content ol {
-            margin-left: 30px;
-            margin-top: 12px;
-            margin-bottom: 15px;
-        }
-        .ai-content li {
-            margin-bottom: 10px;
-            line-height: 1.7;
-        }
-        .ai-content strong {
-            color: var(--pythia-blue);
-            font-weight: 700;
-        }
-        .ai-content code {
-            background: var(--bg-light);
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            color: var(--pythia-blue);
-            border: 1px solid var(--border);
-        }
-        .ai-content pre {
-            background: var(--text-dark);
-            color: #f9fafb;
-            padding: 20px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 20px 0;
-            border-left: 4px solid var(--pythia-purple);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        }
-        .ai-content pre code {
-            background: none;
-            color: #f9fafb;
-            padding: 0;
-            border: none;
-        }
-        .ai-content blockquote {
-            border-left: 4px solid var(--pythia-purple);
-            padding-left: 20px;
-            margin: 20px 0;
-            color: var(--text-light);
-            font-style: italic;
-            background: var(--bg-light);
-            padding: 15px 20px;
-            border-radius: 4px;
-        }
-        .ai-content table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .ai-content table th,
-        .ai-content table td {
-            border: 1px solid var(--border);
-            padding: 12px;
-            text-align: left;
-        }
-        .ai-content table th {
-            background: var(--bg-light);
-            font-weight: 700;
-            color: var(--pythia-blue);
-        }
-        .ai-meta {
-            margin-top: 25px;
-            padding-top: 20px;
-            border-top: 2px solid var(--border);
-            font-size: 13px;
-            color: var(--text-light);
-            text-align: right;
-            font-style: italic;
-        }
+        /* ============================================================
+           FILTER BAR
+           ============================================================ */
+        .filter-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+        .filter-label { font-size: 12px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+        .filter-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+        .filter-btn { padding: 6px 14px; border-radius: 14px; border: 2px solid var(--border); background: white; color: var(--text-light); font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 5px; }
+        .filter-btn:hover { border-color: var(--pythia-purple); color: var(--pythia-purple); }
+        .filter-btn.active { background: var(--pythia-purple); border-color: var(--pythia-purple); color: white; }
+        .filter-btn.f-critical.active { background: var(--critical); border-color: var(--critical); color: white; }
+        .filter-btn.f-high.active     { background: var(--high);     border-color: var(--high);     color: white; }
+        .filter-btn.f-medium.active   { background: var(--medium);   border-color: var(--medium);   color: #333; }
+        .filter-btn.f-low.active      { background: var(--low);      border-color: var(--low);      color: white; }
+        .filter-btn.f-info.active     { background: var(--info);     border-color: var(--info);     color: white; }
+        .filter-cnt { background: rgba(255,255,255,0.3); border-radius: 10px; padding: 1px 6px; font-size: 11px; }
+        .filter-btn:not(.active) .filter-cnt { background: var(--bg-light); color: var(--text-dark); }
 
-        /* ============================================================================
+        /* ============================================================
            FINDINGS TABLE
-           ============================================================================ */
-        .findings {
-            background: white;
-            border-radius: 8px;
-            padding: 35px;
-            margin-bottom: 40px;
-            border: 1px solid var(--border);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 25px;
-            box-shadow: 0 2px 15px rgba(106, 17, 203, 0.08);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        thead {
-            background: linear-gradient(135deg, var(--pythia-purple) 0%, var(--pythia-blue) 100%);
-            color: white;
-        }
-        th {
-            text-align: left;
-            padding: 18px 20px;
-            font-weight: 700;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        td {
-            padding: 18px 20px;
-            border-bottom: 1px solid var(--border);
-            vertical-align: top;
-            font-size: 14px;
-        }
-        #findings tbody tr:hover {
-            background: var(--bg-light);
-            transition: background 0.2s ease;
-        }
-        tr:last-child td {
-            border-bottom: none;
-        }
+           ============================================================ */
+        .findings { background: white; border-radius: 8px; padding: 35px; margin-bottom: 40px; border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; margin-top: 25px; box-shadow: 0 2px 15px rgba(106,17,203,0.08); border-radius: 8px; overflow: hidden; }
+        thead { background: linear-gradient(135deg, var(--pythia-purple) 0%, var(--pythia-blue) 100%); color: white; }
+        th { text-align: left; padding: 18px 20px; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { padding: 18px 20px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 14px; }
+        #findings tbody tr:hover { background: var(--bg-light); transition: background 0.2s ease; }
+        tr:last-child td { border-bottom: none; }
 
-        .severity-badge {
-            display: inline-block;
-            padding: 6px 14px;
-            border-radius: 16px;
-            font-size: 11px;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: white;
-        }
+        .severity-badge { display: inline-block; padding: 6px 14px; border-radius: 16px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: white; }
         .severity-critical { background: var(--critical); }
         .severity-high { background: var(--high); }
         .severity-medium { background: var(--medium); color: #333; }
         .severity-low { background: var(--low); }
         .severity-info { background: var(--info); }
 
-        .confidence-badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            background: var(--bg-light);
-            color: var(--text-dark);
-            border: 1px solid var(--border);
-            font-weight: 600;
-        }
+        .confidence-badge { display: inline-block; padding: 5px 12px; border-radius: 12px; font-size: 11px; background: var(--bg-light); color: var(--text-dark); border: 1px solid var(--border); font-weight: 600; }
 
-        .evidence {
-            background: var(--bg-light);
-            border: 1px solid var(--border);
-            border-left: 4px solid var(--pythia-purple);
-            border-radius: 6px;
-            padding: 15px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            overflow-x: auto;
-            white-space: normal;
-            word-break: break-all;
-            margin-top: 10px;
-        }
+        .evidence { background: var(--bg-light); border: 1px solid var(--border); border-left: 4px solid var(--pythia-purple); border-radius: 6px; padding: 15px; font-family: 'Courier New', monospace; font-size: 13px; overflow-x: auto; white-space: normal; word-break: break-all; margin-top: 10px; }
 
-        /* ============================================================================
-           CONSENT & NOTES SECTIONS
-           ============================================================================ */
-        .consent {
-            background: linear-gradient(135deg, var(--pythia-purple), var(--pythia-deep));
-            color: white;
-            border-radius: 8px;
-            padding: 30px;
-            margin-bottom: 40px;
-            box-shadow: 0 3px 15px rgba(106, 17, 203, 0.3);
-        }
-        .consent h2 {
-            margin-bottom: 20px;
-            font-size: 24px;
-            border-bottom: none;
-            color: white;
-        }
-        .consent h2::before {
-            display: none;
-        }
-        .consent-details {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .consent-item {
-            background: rgba(255, 255, 255, 0.15);
-            padding: 18px;
-            border-radius: 8px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .consent-item label {
-            font-size: 12px;
-            opacity: 0.9;
-            text-transform: uppercase;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-        .consent-item .value {
-            font-size: 16px;
-            margin-top: 8px;
-            font-weight: 700;
-        }
-        .notes {
-            background: var(--bg-light);
-            border-radius: 8px;
-            padding: 30px;
-            margin-bottom: 40px;
-            border-left: 5px solid var(--pythia-blue);
-            box-shadow: 0 2px 10px rgba(37, 117, 252, 0.1);
-        }
+        /* ============================================================
+           CVE / CWE / OWASP BADGES
+           ============================================================ */
+        .cve-badge { display: inline-block; padding: 3px 9px; border-radius: 10px; background: #dc3545; color: white; font-size: 11px; font-weight: 700; text-decoration: none; transition: opacity 0.2s; letter-spacing: 0.3px; }
+        .cve-badge:hover { opacity: 0.82; }
+        .cwe-badge { display: inline-block; padding: 3px 9px; border-radius: 10px; background: #6f42c1; color: white; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; }
+        .owasp-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; background: #ede9fe; color: #4c1d95; border: 1px solid #c4b5fd; text-decoration: none; }
+        .owasp-badge:hover { opacity: 0.82; }
 
-        /* ============================================================================
+        /* payload / dbms / vector tags */
+        .tag-pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px; }
+        .tag-payload { background: #fff3cd; color: #856404; border: 1px solid #ffd96a; font-family: 'Courier New', monospace; }
+        .tag-dbms    { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+        .tag-vector  { background: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd; }
+        .tag-param   { background: #fce7f3; color: #9d174d; border: 1px solid #f9a8d4; }
+
+        /* ============================================================
+           EXPANDABLE PANELS (CVE list, SQL snippets)
+           ============================================================ */
+        .expand-toggle { background: var(--bg-light); border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; color: var(--pythia-purple); cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .expand-toggle:hover { background: var(--border); }
+        .expand-toggle .expand-arrow { transition: transform 0.2s; display: inline-block; font-size: 10px; }
+        .expand-toggle.open .expand-arrow { transform: rotate(90deg); }
+        .expand-panel { display: none; margin-top: 8px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+        .vuln-item { padding: 10px 14px; border-bottom: 1px solid var(--border); background: white; font-size: 13px; }
+        .vuln-item:last-child { border-bottom: none; }
+        .vuln-header { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 5px; }
+        .vuln-title-text { font-weight: 600; color: var(--text-dark); font-size: 12px; }
+        .vuln-desc { color: var(--text-light); font-size: 12px; line-height: 1.55; margin-top: 4px; }
+        .vuln-link { margin-top: 4px; font-size: 12px; }
+        .vuln-link a { color: var(--pythia-purple); text-decoration: none; }
+        .vuln-link a:hover { text-decoration: underline; }
+        .vuln-date { font-size: 11px; color: var(--text-light); margin-top: 3px; }
+
+        /* SQL snippet panel */
+        .snippet-panel { background: #1e1e2e; padding: 0; border-color: transparent; }
+        .snip-label { background: rgba(255,255,255,0.08); color: #a0aec0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 5px 14px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .snip-code { color: #cdd6f4; font-family: 'Courier New', monospace; font-size: 12px; padding: 10px 14px; margin: 0; white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid rgba(255,255,255,0.07); background: transparent; box-shadow: none; border-left: none; border-radius: 0; }
+        .snip-code .kw { color: #cba6f7; }   /* keyword */
+        .snip-code .st { color: #a6e3a1; }   /* string */
+
+        /* Expandable recommendation */
+        .expand-rec-btn { background: none; border: none; color: var(--pythia-purple); font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 0; display: block; margin-top: 5px; }
+        .expand-rec-btn:hover { text-decoration: underline; }
+
+        /* ============================================================
+           CONSENT & NOTES
+           ============================================================ */
+        .consent { background: linear-gradient(135deg, var(--pythia-purple), var(--pythia-deep)); color: white; border-radius: 8px; padding: 30px; margin-bottom: 40px; box-shadow: 0 3px 15px rgba(106,17,203,0.3); }
+        .consent h2 { margin-bottom: 20px; font-size: 24px; border-bottom: none; color: white; }
+        .consent h2::before { display: none; }
+        .consent-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
+        .consent-item { background: rgba(255,255,255,0.15); padding: 18px; border-radius: 8px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); }
+        .consent-item label { font-size: 12px; opacity: 0.9; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        .consent-item .value { font-size: 16px; margin-top: 8px; font-weight: 700; }
+        .notes { background: var(--bg-light); border-radius: 8px; padding: 30px; margin-bottom: 40px; border-left: 5px solid var(--pythia-blue); box-shadow: 0 2px 10px rgba(37,117,252,0.1); }
+
+        /* ============================================================
+           DIFF REPORT
+           ============================================================ */
+        .diff-section { margin: 24px 0; padding: 24px; border-radius: 8px; border: 2px solid var(--border); background: #f8f9ff; }
+        .diff-section h2 { font-size: 20px; margin-bottom: 6px; color: var(--text-dark); }
+
+        /* ============================================================
            FOOTER
-           ============================================================================ */
-        footer {
-            background: var(--text-dark);
-            color: #e0e0e0;
-            padding: 35px 50px;
-            border-top: 5px solid var(--pythia-purple);
-            font-size: 13px;
-        }
-        footer strong {
-            color: #ddd1ea;
-            font-weight: 700;
-        }
-        footer a {
-            color: #ddd1ea;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        footer a:hover {
-            color: var(--pythia-blue);
-            text-decoration: underline;
-        }
+           ============================================================ */
+        footer { background: var(--text-dark); color: #e0e0e0; padding: 35px 50px; border-top: 5px solid var(--pythia-purple); font-size: 13px; }
+        footer strong { color: #ddd1ea; font-weight: 700; }
+        footer a { color: #ddd1ea; text-decoration: none; font-weight: 600; }
+        footer a:hover { color: var(--pythia-blue); text-decoration: underline; }
 
-        /* ============================================================================
-           RESPONSIVE
-           ============================================================================ */
+        /* ============================================================
+           RESPONSIVE + PRINT
+           ============================================================ */
         @media (max-width: 768px) {
-            header, .content, footer {
-                padding: 25px;
-            }
-            header h1 {
-                font-size: 32px;
-            }
-            .logo {
-                font-size: 50px;
-            }
-            h2 {
-                font-size: 22px;
-            }
-            table {
-                font-size: 12px;
-            }
-            th, td {
-                padding: 12px 10px;
-            }
+            header, .content, footer { padding: 25px; }
+            header h1 { font-size: 32px; }
+            .logo { font-size: 50px; }
+            h2 { font-size: 22px; }
+            table { font-size: 12px; }
+            th, td { padding: 12px 10px; }
         }
-
-        /* ============================================================================
-           PRINT STYLES
-           ============================================================================ */
         @media print {
-            header {
-                background: var(--pythia-purple);
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
+            header { background: var(--pythia-purple); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
     </style>
 </head>
 <body>
 <div class="container">
+
     <!-- HEADER -->
     <header>
         <div class="logo">🔮</div>
@@ -608,6 +290,7 @@
     </header>
 
     <div class="content">
+
         <!-- OVERVIEW -->
         <div class="overview">
             <h2>📊 Scan Overview</h2>
@@ -658,48 +341,79 @@
         </div>
         {% endif %}
 
-        <!-- AI ANALYSIS WITH DYNAMIC TABS (manteniendo la lógica de Pythia) -->
-        {% if ai and (ai.executive_summary or ai.technical_remediation) %}
+        <!-- AI ANALYSIS — standard / agent / compare modes -->
+        {% if ai and (ai.executive_summary or ai.technical_remediation or ai.agent_analysis or ai.comparison_mode) %}
         <div class="ai-analysis">
             <h2>🤖 AI-Powered SQL Injection Analysis</h2>
 
-            {% set has_executive = ai.executive_summary and ai.executive_summary|length > 0 %}
-            {% set has_technical = ai.technical_remediation and ai.technical_remediation|length > 0 %}
-
-            {% if has_executive and has_technical %}
+            {% if ai.comparison_mode %}
+            {# COMPARE MODE: one tab per provider #}
+            {% set providers = ai.results.keys()|list %}
             <div class="ai-tabs">
-                <button class="ai-tab active" onclick="showAiTab('executive')">
-                    Executive Summary
-                </button>
-                <button class="ai-tab" onclick="showAiTab('technical')">
-                    Technical Hardening Guide
-                </button>
+                {% for provider in providers %}
+                <button class="ai-tab {% if loop.first %}active{% endif %}"
+                        onclick="showAiTab('cmp-{{ loop.index }}')">{{ provider }}</button>
+                {% endfor %}
+            </div>
+            {% for provider, pdata in ai.results.items() %}
+            <div id="cmp-{{ loop.index }}-tab" class="ai-content {% if loop.first %}active{% endif %}">
+                <h3 style="color: var(--pythia-purple); margin-bottom: 16px;">{{ provider }}</h3>
+                {% if pdata.executive_summary %}<h4>Executive Summary</h4>{{ pdata.executive_summary|safe }}{% endif %}
+                {% if pdata.technical_remediation %}<h4>Technical Remediation</h4>{{ pdata.technical_remediation|safe }}{% endif %}
+                {% if pdata.agent_analysis %}<h4>Agent Analysis</h4>{{ pdata.agent_analysis|safe }}{% endif %}
+            </div>
+            {% endfor %}
+            {% set cost = ai.cost %}
+            {% if cost %}
+            <div class="ai-meta">
+                Comparison: {{ ai.providers_compared|join(', ') }} &mdash;
+                Total cost: ${{ "%.4f"|format(cost.total_usd) }} &mdash; {{ ai.generated_at }}
             </div>
             {% endif %}
 
+            {% elif ai.agent_analysis %}
+            {# AGENT MODE #}
+            <div class="ai-content active">
+                <h3 style="color: var(--pythia-purple); margin-bottom: 20px;">🕵️ Agent Analysis — CVE Lookup</h3>
+                {{ ai.agent_analysis|safe }}
+            </div>
+            {% if ai.model_used %}
+            <div class="ai-meta">
+                Generated by <strong>{{ ai.model_used }}</strong> (agent mode) at {{ ai.generated_at }}
+                {% if ai.cost %} &mdash; Cost: ${{ "%.4f"|format(ai.cost.total_usd) }}{% endif %}
+            </div>
+            {% endif %}
+
+            {% else %}
+            {# STANDARD MODE: executive / technical tabs #}
+            {% set has_executive = ai.executive_summary and ai.executive_summary|length > 0 %}
+            {% set has_technical = ai.technical_remediation and ai.technical_remediation|length > 0 %}
+            {% if has_executive and has_technical %}
+            <div class="ai-tabs">
+                <button class="ai-tab active" onclick="showAiTab('executive')">Executive Summary</button>
+                <button class="ai-tab" onclick="showAiTab('technical')">Technical Hardening Guide</button>
+            </div>
+            {% endif %}
             {% if has_executive %}
             <div id="executive-tab" class="ai-content {% if not has_technical or has_executive %}active{% endif %}">
-                {% if not has_technical %}
-                <h3>📊 Executive Summary (Business Impact)</h3>
-                {% endif %}
+                {% if not has_technical %}<h3>📊 Executive Summary (Business Impact)</h3>{% endif %}
                 {{ ai.executive_summary|safe }}
             </div>
             {% endif %}
-
             {% if has_technical %}
             <div id="technical-tab" class="ai-content {% if not has_executive %}active{% endif %}">
-                {% if not has_executive %}
-                <h3>🔧 Technical Hardening Guide</h3>
-                {% endif %}
+                {% if not has_executive %}<h3>🔧 Technical Hardening Guide</h3>{% endif %}
                 {{ ai.technical_remediation|safe }}
             </div>
             {% endif %}
-
             {% if ai.model_used %}
             <div class="ai-meta">
                 Generated by <strong>{{ ai.model_used }}</strong> at {{ ai.generated_at }}
+                {% if ai.cost %} &mdash; Cost: ${{ "%.4f"|format(ai.cost.total_usd) }}{% endif %}
             </div>
             {% endif %}
+            {% endif %}
+
         </div>
         {% endif %}
 
@@ -707,41 +421,232 @@
         <div class="findings">
             <h2>🔍 SQL Injection Findings ({{ findings|length }})</h2>
             {% if findings %}
+
+            {# Severity counts for filter bar #}
+            {% set crit_n = findings|selectattr('severity','equalto','critical')|list|length %}
+            {% set high_n = findings|selectattr('severity','equalto','high')|list|length %}
+            {% set med_n  = findings|selectattr('severity','equalto','medium')|list|length %}
+            {% set low_n  = findings|selectattr('severity','equalto','low')|list|length %}
+            {% set info_n = findings|selectattr('severity','equalto','info')|list|length %}
+
+            <div class="filter-bar">
+                <span class="filter-label">Filter:</span>
+                <div class="filter-btns">
+                    <button class="filter-btn active" onclick="filterSeverity('all',this)">All <span class="filter-cnt">{{ findings|length }}</span></button>
+                    {% if crit_n > 0 %}<button class="filter-btn f-critical" onclick="filterSeverity('critical',this)">Critical <span class="filter-cnt">{{ crit_n }}</span></button>{% endif %}
+                    {% if high_n > 0 %}<button class="filter-btn f-high"     onclick="filterSeverity('high',this)">High <span class="filter-cnt">{{ high_n }}</span></button>{% endif %}
+                    {% if med_n  > 0 %}<button class="filter-btn f-medium"   onclick="filterSeverity('medium',this)">Medium <span class="filter-cnt">{{ med_n }}</span></button>{% endif %}
+                    {% if low_n  > 0 %}<button class="filter-btn f-low"      onclick="filterSeverity('low',this)">Low <span class="filter-cnt">{{ low_n }}</span></button>{% endif %}
+                    {% if info_n > 0 %}<button class="filter-btn f-info"     onclick="filterSeverity('info',this)">Info <span class="filter-cnt">{{ info_n }}</span></button>{% endif %}
+                </div>
+            </div>
+
             <table id="findings">
                 <thead>
                 <tr>
                     <th style="width: 10%">ID</th>
-                    <th style="width: 35%">Finding</th>
-                    <th style="width: 10%">Severity</th>
-                    <th style="width: 10%">Confidence</th>
+                    <th style="width: 38%">Finding</th>
+                    <th style="width: 9%">Severity</th>
+                    <th style="width: 8%">Confidence</th>
                     <th style="width: 35%">Recommendation</th>
                 </tr>
                 </thead>
                 <tbody>
                 {% for finding in findings %}
-                <tr>
-                    <td><code>{{ finding.id }}</code></td>
+                <tr data-severity="{{ finding.severity }}">
+                    <td>
+                        <code>{{ finding.id }}</code>
+                        {% if finding.cvss %}
+                        {% if finding.cvss >= 9.0 %}{% set cb='#fee2e2' %}{% set cc='#991b1b' %}{% set ce='#fca5a5' %}
+                        {% elif finding.cvss >= 7.0 %}{% set cb='#ffedd5' %}{% set cc='#9a3412' %}{% set ce='#fdba74' %}
+                        {% elif finding.cvss >= 4.0 %}{% set cb='#fef9c3' %}{% set cc='#713f12' %}{% set ce='#fde047' %}
+                        {% else %}{% set cb='#d1fae5' %}{% set cc='#065f46' %}{% set ce='#6ee7b7' %}{% endif %}
+                        <div style="margin-top: 6px;">
+                            <span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:{{ cb }};color:{{ cc }};border:1px solid {{ ce }};">CVSS {{ finding.cvss }}</span>
+                        </div>
+                        {% endif %}
+                    </td>
                     <td>
                         <strong>{{ finding.title }}</strong>
-                        {% if finding.description %}
-                        <p style="margin-top: 8px; font-size: 13px; color: var(--text-light);">
-                            {{ finding.description }}
-                        </p>
+                        {% if finding.contextual_score is defined and finding.contextual_score %}
+                        {% if finding.contextual_score >= 9.5 %}{% set rb='#fce8e8' %}{% set rc='#7f1d1d' %}{% set re='#f87171' %}
+                        {% elif finding.contextual_score >= 9.0 %}{% set rb='#fee2e2' %}{% set rc='#991b1b' %}{% set re='#fca5a5' %}
+                        {% elif finding.contextual_score >= 7.0 %}{% set rb='#ffedd5' %}{% set rc='#9a3412' %}{% set re='#fdba74' %}
+                        {% else %}{% set rb='#d1fae5' %}{% set rc='#065f46' %}{% set re='#6ee7b7' %}{% endif %}
+                        <span style="display:inline-block;margin-left:6px;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;background:{{ rb }};color:{{ rc }};border:1px solid {{ re }};vertical-align:middle;" title="Contextual Risk Score — adjusted for observable runtime evidence">⚠ {{ finding.contextual_score }}</span>
                         {% endif %}
-                        {% if finding.affected_component %}
+
+                        {% if finding.description %}
+                        <p style="margin-top: 8px; font-size: 13px; color: var(--text-light);">{{ finding.description }}</p>
+                        {% endif %}
+
+                        {# — Payload / DBMS / Vector / Parameter tags — #}
+                        {% if finding.payload or finding.dbms or finding.vector or finding.parameter %}
+                        <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center;">
+                            {% if finding.parameter %}<span class="tag-pill tag-param">param: {{ finding.parameter }}</span>{% endif %}
+                            {% if finding.vector %}<span class="tag-pill tag-vector">{{ finding.vector }}</span>{% endif %}
+                            {% if finding.dbms %}<span class="tag-pill tag-dbms">{{ finding.dbms }}</span>{% endif %}
+                            {% if finding.payload %}<span class="tag-pill tag-payload">{{ finding.payload|truncate(40) }}</span>{% endif %}
+                        </div>
+                        {% endif %}
+
+                        {% if finding.affected_component and not finding.parameter %}
                         <p style="margin-top: 6px; font-size: 12px; color: var(--pythia-purple); font-weight: 600;">
                             📍 {{ finding.affected_component }}
                         </p>
                         {% endif %}
+
                         {% if finding.evidence %}
                         <div class="evidence">
                             <strong>{{ finding.evidence.type|upper }}:</strong>
-                            {{ finding.evidence.value }}
+                            {{ finding.evidence.value|e }}
                             {% if finding.evidence.context %}
-                            <br><small style="color: var(--text-light);">{{ finding.evidence.context }}</small>
+                            <br><small style="color: var(--text-light);">{{ finding.evidence.context|e }}</small>
                             {% endif %}
                         </div>
                         {% endif %}
+
+                        {# — OWASP Top 10 badge — #}
+                        {% if finding.owasp %}
+                        <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center;">
+                            <span style="font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.4px;">OWASP:</span>
+                            <a href="https://owasp.org/Top10/{{ finding.owasp.id }}_2021-Injection/" target="_blank" class="owasp-badge">
+                                {{ finding.owasp.id }}: {{ finding.owasp.name }}
+                            </a>
+                        </div>
+                        {% endif %}
+
+                        {# — CWE badge (from finding.cwe or from vulnerabilities) — #}
+                        {% if finding.cwe %}
+                        <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center;">
+                            <span style="font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.4px;">CWE:</span>
+                            <span class="cwe-badge">{{ finding.cwe.id }}{% if finding.cwe.name %}: {{ finding.cwe.name }}{% endif %}</span>
+                        </div>
+                        {% elif finding.vulnerabilities %}
+                        {% set ns = namespace(cwes=[]) %}
+                        {% for v in finding.vulnerabilities %}{% if v.cwe_id and v.cwe_id not in ns.cwes %}{% set ns.cwes = ns.cwes + [v.cwe_id] %}{% endif %}{% endfor %}
+                        {% if ns.cwes %}
+                        <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center;">
+                            <span style="font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.4px;">CWE:</span>
+                            {% for cwe_id in ns.cwes %}
+                            {% set ns2 = namespace(cwe_name='') %}
+                            {% for v in finding.vulnerabilities %}{% if v.cwe_id == cwe_id and v.cwe_name %}{% set ns2.cwe_name = v.cwe_name %}{% endif %}{% endfor %}
+                            <span class="cwe-badge">{{ cwe_id }}{% if ns2.cwe_name %}: {{ ns2.cwe_name }}{% endif %}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        {% endif %}
+
+                        {# — CVE badges (legacy list from finding.cve) — #}
+                        {% if finding.cve %}
+                        <div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center;">
+                            <span style="font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.4px;">CVE:</span>
+                            {% for cve_id in finding.cve %}
+                            <a href="https://nvd.nist.gov/vuln/detail/{{ cve_id }}" target="_blank" class="cve-badge">{{ cve_id }}</a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {# — Expandable NVD CVE records (from AI agent) — #}
+                        {% if finding.vulnerabilities %}
+                        <div style="margin-top: 8px;">
+                            <button class="expand-toggle" onclick="togglePanel('vuln-{{ loop.index }}')">
+                                <span class="expand-arrow">▶</span>
+                                {{ finding.vulnerabilities|length }} CVE record{{ 's' if finding.vulnerabilities|length != 1 else '' }}
+                            </button>
+                            <div class="expand-panel" id="vuln-{{ loop.index }}">
+                                {% for v in finding.vulnerabilities %}
+                                <div class="vuln-item">
+                                    <div class="vuln-header">
+                                        {% if v.cve_id %}<a href="https://nvd.nist.gov/vuln/detail/{{ v.cve_id }}" target="_blank" class="cve-badge" style="font-size:10px;">{{ v.cve_id }}</a>{% endif %}
+                                        {% if v.cvss %}
+                                        {% if v.cvss >= 9.0 %}{% set vb='#fee2e2' %}{% set vc='#991b1b' %}{% set ve='#fca5a5' %}
+                                        {% elif v.cvss >= 7.0 %}{% set vb='#ffedd5' %}{% set vc='#9a3412' %}{% set ve='#fdba74' %}
+                                        {% elif v.cvss >= 4.0 %}{% set vb='#fef9c3' %}{% set vc='#713f12' %}{% set ve='#fde047' %}
+                                        {% else %}{% set vb='#d1fae5' %}{% set vc='#065f46' %}{% set ve='#6ee7b7' %}{% endif %}
+                                        <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;background:{{ vb }};color:{{ vc }};border:1px solid {{ ve }};">CVSS {{ v.cvss }}</span>
+                                        {% endif %}
+                                        {% if v.cwe_id %}<span class="cwe-badge" style="font-size:10px;">{{ v.cwe_id }}</span>{% endif %}
+                                        <span class="vuln-title-text">{{ v.title }}</span>
+                                    </div>
+                                    {% if v.description %}<div class="vuln-desc">{{ v.description }}</div>{% endif %}
+                                    {% if v.link %}<div class="vuln-link"><a href="{{ v.link }}" target="_blank">🔗 NVD Source</a></div>{% endif %}
+                                    {% if v.date %}<div class="vuln-date">Published: {{ v.date }}</div>{% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {# — SQL Code Fix Snippets — #}
+                        {# Only show for actual SQLi findings (not info severity) #}
+                        {% if finding.severity in ['critical', 'high', 'medium'] %}
+                        {% set dbms_lower = (finding.dbms or '')|lower %}
+                        <div style="margin-top: 8px;">
+                            <button class="expand-toggle" onclick="togglePanel('snip-{{ loop.index }}')">
+                                <span class="expand-arrow">▶</span> Show parameterized query fix
+                            </button>
+                            <div class="expand-panel snippet-panel" id="snip-{{ loop.index }}">
+                                {% if 'postgres' in dbms_lower %}
+                                <div class="snip-label">PHP (PDO — PostgreSQL)</div>
+                                <pre class="snip-code">$stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id");
+$stmt->execute([':id' => $id]);
+$result = $stmt->fetchAll();</pre>
+                                <div class="snip-label">Python (psycopg2)</div>
+                                <pre class="snip-code">cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+rows = cur.fetchall()</pre>
+                                <div class="snip-label">Python (SQLAlchemy)</div>
+                                <pre class="snip-code">result = db.execute(text("SELECT * FROM users WHERE id = :id"), {"id": user_id})</pre>
+                                <div class="snip-label">Node.js (pg)</div>
+                                <pre class="snip-code">const res = await client.query('SELECT * FROM users WHERE id = $1', [userId])</pre>
+                                {% elif 'mssql' in dbms_lower or 'sql server' in dbms_lower %}
+                                <div class="snip-label">PHP (PDO — SQL Server)</div>
+                                <pre class="snip-code">$stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id");
+$stmt->execute([':id' => $id]);
+$result = $stmt->fetchAll();</pre>
+                                <div class="snip-label">C# (.NET — SqlCommand)</div>
+                                <pre class="snip-code">using var cmd = new SqlCommand("SELECT * FROM users WHERE id = @id", conn);
+cmd.Parameters.AddWithValue("@id", userId);
+using var reader = await cmd.ExecuteReaderAsync();</pre>
+                                <div class="snip-label">Java (PreparedStatement)</div>
+                                <pre class="snip-code">PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE id = ?");
+stmt.setInt(1, userId);
+ResultSet rs = stmt.executeQuery();</pre>
+                                {% elif 'sqlite' in dbms_lower %}
+                                <div class="snip-label">Python (sqlite3)</div>
+                                <pre class="snip-code">cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+rows = cur.fetchall()</pre>
+                                <div class="snip-label">PHP (PDO — SQLite)</div>
+                                <pre class="snip-code">$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->execute([$id]);
+$result = $stmt->fetchAll();</pre>
+                                <div class="snip-label">Node.js (better-sqlite3)</div>
+                                <pre class="snip-code">const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);</pre>
+                                {% else %}
+                                {# MySQL / MariaDB / generic default #}
+                                <div class="snip-label">PHP (PDO — recommended)</div>
+                                <pre class="snip-code">$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->execute([$id]);
+$result = $stmt->fetchAll(PDO::FETCH_ASSOC);</pre>
+                                <div class="snip-label">PHP (MySQLi)</div>
+                                <pre class="snip-code">$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->bind_param("i", $id);
+$stmt->execute();
+$result = $stmt->get_result();</pre>
+                                <div class="snip-label">Python (mysql-connector)</div>
+                                <pre class="snip-code">cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+rows = cursor.fetchall()</pre>
+                                <div class="snip-label">Node.js (mysql2)</div>
+                                <pre class="snip-code">const [rows] = await pool.execute('SELECT * FROM users WHERE id = ?', [userId]);</pre>
+                                <div class="snip-label">Java (PreparedStatement)</div>
+                                <pre class="snip-code">PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE id = ?");
+stmt.setInt(1, userId);
+ResultSet rs = stmt.executeQuery();</pre>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
                     </td>
                     <td>
                         <span class="severity-badge severity-{{ finding.severity }}">
@@ -752,26 +657,38 @@
                         <span class="confidence-badge">{{ finding.confidence }}</span>
                     </td>
                     <td>
-                        <div style="font-size: 13px; line-height: 1.6;">
-                            {{ finding.recommendation }}
+                        {% set rec = finding.recommendation %}
+                        {% if rec|length > 200 %}
+                        <div class="rec-short" style="font-size:13px;line-height:1.6;">{{ rec[:200] }}…</div>
+                        <div class="rec-full" style="display:none;font-size:13px;line-height:1.6;white-space:pre-line;">{{ rec }}</div>
+                        <button class="expand-rec-btn" onclick="toggleRec(this)">Show more ▼</button>
+                        {% else %}
+                        <div style="font-size: 13px; line-height: 1.6;">{{ rec }}</div>
+                        {% endif %}
+
+                        {% if finding.risk_factors is defined and finding.risk_factors %}
+                        <div style="margin-top: 8px;">
+                            <button class="expand-toggle" onclick="togglePanel('risk-{{ loop.index }}')" style="font-size:11px;">
+                                <span class="expand-arrow">▶</span>
+                                ⚠ {{ finding.risk_factors|length }} risk factor{{ 's' if finding.risk_factors|length != 1 else '' }} · score {{ finding.contextual_score }}
+                            </button>
+                            <div class="expand-panel" id="risk-{{ loop.index }}">
+                                <ul style="margin: 4px 0 0 14px; color: #78350f; font-size: 12px;">
+                                    {% for factor in finding.risk_factors %}
+                                    <li style="margin-top: 2px;">{{ factor }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
                         </div>
+                        {% endif %}
+
                         {% if finding.references %}
                         <div style="margin-top: 10px; font-size: 12px;">
                             <strong>References:</strong><br>
                             {% for ref in finding.references %}
-                            <a href="{{ ref }}" target="_blank" style="color: var(--pythia-purple); text-decoration: none;">
+                            <a href="{{ ref }}" target="_blank" style="color: var(--pythia-purple); text-decoration: none; display: block; margin-top: 3px;">
                                 🔗 {{ ref|truncate(60) }}
-                            </a><br>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                        {% if finding.cve %}
-                        <div style="margin-top: 8px; font-size: 12px;">
-                            <strong>CVE:</strong>
-                            {% for cve_id in finding.cve %}
-                            <code style="background: #fff3cd; padding: 2px 6px; border-radius: 3px; color: #856404;">
-                                {{ cve_id }}
-                            </code>
+                            </a>
                             {% endfor %}
                         </div>
                         {% endif %}
@@ -787,63 +704,161 @@
             {% endif %}
         </div>
 
+        <!-- DIFF REPORT -->
+        {% if diff %}
+        <div class="diff-section">
+            <h2>🔄 Scan Comparison</h2>
+            <p style="font-size: 13px; color: var(--text-light); margin-bottom: {% if diff.mode_mismatch %}12{% else %}20{% endif %}px;">
+                Compared against scan #{{ diff.ref_scan_id }}
+                {% if diff.ref_date %} &mdash; {{ diff.ref_date[:10] }}{% endif %}
+                {% if diff.ref_target %} &mdash; {{ diff.ref_target }}{% endif %}
+                {% if diff.ref_mode %} &mdash; <strong>{{ diff.ref_mode }} mode</strong>{% endif %}
+            </p>
+
+            {% if diff.mode_mismatch %}
+            <div style="margin-bottom: 20px; padding: 12px 16px; border-radius: 6px; background: #fff8e1; border: 1px solid #ffe082; display: flex; align-items: flex-start; gap: 10px;">
+                <span style="font-size: 18px; line-height: 1.4;">&#9888;</span>
+                <div>
+                    <strong style="color: #e65100; font-size: 13px;">Mode mismatch: {{ diff.ref_mode }} vs {{ diff.current_mode }}</strong>
+                    <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-light); line-height: 1.5;">
+                        The reference scan ran in <strong>{{ diff.ref_mode }}</strong> mode and this scan ran in
+                        <strong>{{ diff.current_mode }}</strong> mode.
+                        Some differences may reflect checks available only in {{ diff.ref_mode }} mode
+                        rather than actual remediation. Verify manually before marking issues as resolved.
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Summary row -->
+            <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px;">
+                <div style="flex:1;min-width:140px;padding:14px 18px;border-radius:6px;background:#fff3f3;border:1px solid #f5c6cb;text-align:center;">
+                    <div style="font-size:28px;font-weight:700;color:#dc3545;">{{ diff.new|length }}</div>
+                    <div style="font-size:12px;font-weight:600;color:#dc3545;text-transform:uppercase;letter-spacing:0.5px;">New</div>
+                    <div style="font-size:11px;color:var(--text-light);margin-top:2px;">appeared since last scan</div>
+                </div>
+                <div style="flex:1;min-width:140px;padding:14px 18px;border-radius:6px;background:#f0fff4;border:1px solid #c3e6cb;text-align:center;">
+                    <div style="font-size:28px;font-weight:700;color:#28a745;">{{ diff.fixed|length }}</div>
+                    <div style="font-size:12px;font-weight:600;color:#28a745;text-transform:uppercase;letter-spacing:0.5px;">Fixed</div>
+                    <div style="font-size:11px;color:var(--text-light);margin-top:2px;">remediated since last scan</div>
+                </div>
+                <div style="flex:1;min-width:140px;padding:14px 18px;border-radius:6px;background:#f5f5f5;border:1px solid #dee2e6;text-align:center;">
+                    <div style="font-size:28px;font-weight:700;color:var(--text-light);">{{ diff.persisting|length }}</div>
+                    <div style="font-size:12px;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:0.5px;">Persisting</div>
+                    <div style="font-size:11px;color:var(--text-light);margin-top:2px;">present in both scans</div>
+                </div>
+            </div>
+
+            {% macro sev_badge(sev) %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;background:{% if sev=='critical' %}#dc3545{% elif sev=='high' %}#fd7e14{% elif sev=='medium' %}#ffc107{% elif sev=='low' %}#17a2b8{% else %}#6c757d{% endif %};color:{% if sev=='medium' %}#212529{% else %}#fff{% endif %};">{{ sev }}</span>
+            {% endmacro %}
+
+            {% if diff.new %}
+            <h3 style="font-size:14px;font-weight:700;color:#dc3545;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">New findings ({{ diff.new|length }})</h3>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:18px;box-shadow:none;font-size:13px;">
+                <thead><tr style="background:#fff3f3;border-bottom:2px solid #f5c6cb;">
+                    <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">ID</th>
+                    <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">Title</th>
+                    <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">Severity</th>
+                </tr></thead>
+                <tbody>{% for f in diff.new %}
+                <tr style="border-bottom:1px solid #f5c6cb;">
+                    <td style="padding:7px 12px;font-family:monospace;color:#dc3545;">{{ f.id }}</td>
+                    <td style="padding:7px 12px;">{{ f.title }}</td>
+                    <td style="padding:7px 12px;">{{ sev_badge(f.severity) }}</td>
+                </tr>{% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            {% if diff.fixed %}
+            <h3 style="font-size:14px;font-weight:700;color:#28a745;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">Fixed findings ({{ diff.fixed|length }})</h3>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:18px;box-shadow:none;font-size:13px;">
+                <thead><tr style="background:#f0fff4;border-bottom:2px solid #c3e6cb;">
+                    <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">ID</th>
+                    <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">Title</th>
+                    <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">Severity</th>
+                </tr></thead>
+                <tbody>{% for f in diff.fixed %}
+                <tr style="border-bottom:1px solid #c3e6cb;text-decoration:line-through;opacity:0.7;">
+                    <td style="padding:7px 12px;font-family:monospace;color:#28a745;">{{ f.id }}</td>
+                    <td style="padding:7px 12px;">{{ f.title }}</td>
+                    <td style="padding:7px 12px;">{{ sev_badge(f.severity) }}</td>
+                </tr>{% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            {% if diff.persisting %}
+            <details>
+                <summary style="font-size:13px;font-weight:600;color:var(--text-light);cursor:pointer;margin-bottom:8px;user-select:none;">
+                    Persisting findings ({{ diff.persisting|length }}) — click to expand
+                </summary>
+                <table style="width:100%;border-collapse:collapse;margin-top:8px;box-shadow:none;font-size:13px;">
+                    <thead><tr style="background:#f5f5f5;border-bottom:2px solid #dee2e6;">
+                        <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">ID</th>
+                        <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">Title</th>
+                        <th style="padding:8px 12px;text-align:left;color:var(--text-light);font-weight:600;">Severity</th>
+                    </tr></thead>
+                    <tbody>{% for f in diff.persisting %}
+                    <tr style="border-bottom:1px solid #dee2e6;">
+                        <td style="padding:7px 12px;font-family:monospace;color:var(--text-light);">{{ f.id }}</td>
+                        <td style="padding:7px 12px;color:var(--text-light);">{{ f.title }}</td>
+                        <td style="padding:7px 12px;">{{ sev_badge(f.severity) }}</td>
+                    </tr>{% endfor %}
+                    </tbody>
+                </table>
+            </details>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <!-- NOTES / METADATA -->
         {% if notes %}
         <div class="notes">
             <h2>📝 Scan Metadata</h2>
             <table style="box-shadow: none; margin-top: 15px;">
                 {% if notes.scan_duration_seconds %}
-                <tr>
-                    <td style="width: 30%; font-weight: 600; border: none;">⏱️ Scan Duration</td>
-                    <td style="border: none;">{{ notes.scan_duration_seconds }} seconds</td>
-                </tr>
+                <tr><td style="width:30%;font-weight:600;border:none;">⏱️ Scan Duration</td><td style="border:none;">{{ notes.scan_duration_seconds }} seconds</td></tr>
                 {% endif %}
                 {% if notes.requests_sent %}
-                <tr>
-                    <td style="font-weight: 600; border: none;">📡 HTTP Requests</td>
-                    <td style="border: none;">{{ notes.requests_sent }} (rate limited)</td>
-                </tr>
+                <tr><td style="font-weight:600;border:none;">📡 HTTP Requests</td><td style="border:none;">{{ notes.requests_sent }} (rate limited)</td></tr>
                 {% endif %}
                 {% if notes.rate_limit_applied %}
-                <tr>
-                    <td style="font-weight: 600; border: none;">🚦 Rate Limiting</td>
-                    <td style="border: none;">✅ Applied (conservative rates for ethical testing)</td>
-                </tr>
+                <tr><td style="font-weight:600;border:none;">🚦 Rate Limiting</td><td style="border:none;">✅ Applied (conservative rates for ethical testing)</td></tr>
                 {% endif %}
                 {% if notes.scope_limitations %}
-                <tr>
-                    <td style="font-weight: 600; border: none;">🔍 Scope</td>
-                    <td style="border: none;">{{ notes.scope_limitations }}</td>
-                </tr>
+                <tr><td style="font-weight:600;border:none;">🔍 Scope</td><td style="border:none;">{{ notes.scope_limitations }}</td></tr>
                 {% endif %}
                 {% if notes.false_positive_disclaimer %}
-                <tr>
-                    <td style="font-weight: 600; border: none;">⚠️ Disclaimer</td>
-                    <td style="border: none;">{{ notes.false_positive_disclaimer }}</td>
-                </tr>
+                <tr><td style="font-weight:600;border:none;">⚠️ Disclaimer</td><td style="border:none;">{{ notes.false_positive_disclaimer }}</td></tr>
                 {% endif %}
             </table>
         </div>
         {% endif %}
-    </div>
+
+    </div><!-- .content -->
 
     <!-- FOOTER -->
     <footer>
         <p><strong>Generated by Pythia v{{ version }}</strong> — Passive SQL Clairvoyance 🔮</p>
-        <p style="margin-top: 10px;">
-            Use only on authorized targets. This report is for informational and remediation purposes.
-            Manual verification recommended for all SQLi findings before remediation.
-        </p>
+        <p style="margin-top: 12px;">Part of the <strong>Argos Security Suite</strong> | Generated on {{ date }}</p>
         <p style="margin-top: 20px; font-size: 12px; opacity: 0.8;">
             © 2025 <a href="https://rodhnin.com" target="_blank">Rodney Dhavid Jimenez Chacin (rodhnin)</a> — MIT License<br>
             <a href="https://github.com/rodhnin/pythia-sql-clairvoyance" target="_blank">GitHub: pythia-sql-clairvoyance</a> |
             <a href="https://owasp.org/www-community/attacks/SQL_Injection" target="_blank">OWASP SQL Injection Guide</a>
         </p>
+        <p style="margin-top: 15px; font-size: 12px;">
+            ⚠️ Use only on authorized targets. This report is for informational and remediation purposes.
+            Manual verification recommended for all SQLi findings before remediation.
+        </p>
     </footer>
-</div>
+
+</div><!-- .container -->
 
 <!-- JAVASCRIPT -->
 <script>
+    // ── AI analysis tabs ─────────────────────────────────────────────────────
     function showAiTab(tab) {
         document.querySelectorAll('.ai-content').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.ai-tab').forEach(el => el.classList.remove('active'));
@@ -851,6 +866,36 @@
         event.target.classList.add('active');
     }
 
+    // ── Severity filter ──────────────────────────────────────────────────────
+    function filterSeverity(sev, btn) {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('#findings tbody tr').forEach(row => {
+            row.style.display = (sev === 'all' || row.dataset.severity === sev) ? '' : 'none';
+        });
+    }
+
+    // ── Expandable panel (CVE records / SQL snippets) ────────────────────────
+    function togglePanel(id) {
+        const panel = document.getElementById(id);
+        const btn   = panel.previousElementSibling;
+        const open  = panel.style.display === 'block';
+        panel.style.display = open ? 'none' : 'block';
+        btn.classList.toggle('open', !open);
+    }
+
+    // ── Expandable recommendation ─────────────────────────────────────────────
+    function toggleRec(btn) {
+        const c    = btn.parentElement;
+        const sh   = c.querySelector('.rec-short');
+        const fu   = c.querySelector('.rec-full');
+        const open = fu.style.display === 'block';
+        sh.style.display = open ? 'block' : 'none';
+        fu.style.display = open ? 'none'  : 'block';
+        btn.textContent  = open ? 'Show more ▼' : 'Show less ▲';
+    }
+
+    // ── Print shortcut ────────────────────────────────────────────────────────
     window.addEventListener('keydown', function(e) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
             window.print();
